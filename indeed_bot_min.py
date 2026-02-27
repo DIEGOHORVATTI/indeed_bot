@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import argparse
 import time
-from typing import List
+from typing import List, Optional
 
 from camoufox.sync_api import Camoufox
 
@@ -22,12 +23,15 @@ Minimal Indeed Auto-Apply Bot
 - Applies to the jobs found on that page.
 
 Run:
-  uv run python indeed_bot_min.py
+  uv run python indeed_bot_min.py [max_applies]
 """
 
 
-def main(config_path: str = "config.yaml") -> None:
+def run(config_path: str = "config.yaml", max_applies: Optional[int] = None) -> None:
     cfg = AppConfig.load(config_path)
+
+    if max_applies is not None:
+        print(f"Limit: applying to at most {max_applies} jobs.")
     user_data_dir = cfg.camoufox.user_data_dir
     language = cfg.camoufox.language
 
@@ -81,12 +85,29 @@ def main(config_path: str = "config.yaml") -> None:
                 print("Error extracting jobs:", e)
                 links = []
 
+            applied_count = 0
             for job_url in links:
-                print(f"Applying to: {job_url}")
-                success = apply_to_job(browser, job_url, language, logger)
-                if not success:
+                if max_applies is not None and applied_count >= max_applies:
+                    print(f"Reached limit of {max_applies} applications. Stopping.")
+                    return
+                print(f"[{applied_count + 1}{f'/{max_applies}' if max_applies else ''}] Applying to: {job_url}")
+                success = apply_to_job(browser, job_url, language, logger, personalization_config=cfg.personalization)
+                if success:
+                    applied_count += 1
+                else:
                     logger.error(f"Failed to apply to {job_url}")
                 time.sleep(5)
+
+        print(f"Done! Applied to {applied_count} jobs total.")
+
+
+def main(argv: Optional[list[str]] = None) -> None:
+    parser = argparse.ArgumentParser(description="Indeed Auto-Apply Bot (minimal)")
+    parser.add_argument("max_applies", nargs="?", type=int, default=None,
+                        help="Max number of jobs to apply to (default: unlimited)")
+    parser.add_argument("--config", default="config.yaml", help="Path to config.yaml")
+    args = parser.parse_args(argv)
+    run(config_path=args.config, max_applies=args.max_applies)
 
 
 if __name__ == "__main__":
