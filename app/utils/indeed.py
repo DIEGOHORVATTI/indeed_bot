@@ -64,7 +64,7 @@ def click_and_wait(element, timeout: float = 5.0) -> None:
         time.sleep(timeout)
 
 
-def apply_to_job(browser, job_url: str, language: Optional[str], logger, personalization_config=None) -> bool:
+def apply_to_job(browser, job_url: str, language: Optional[str], logger, personalization_config=None, profile_config=None) -> bool:
     """Open a new tab, apply to the job, log the result, and close the tab."""
     page = browser.new_page()
     cv_pdf_path = None
@@ -82,12 +82,14 @@ def apply_to_job(browser, job_url: str, language: Optional[str], logger, persona
                 job_info = scrape_job_description(page)
                 if job_info.get("description"):
                     logger.info(f"Generating tailored CV for: {job_info.get('title', '?')} at {job_info.get('company', '?')}")
+                    profile_dict = profile_config.model_dump() if profile_config else None
                     cv_pdf_path, cover_pdf_path = generate_pdfs_for_job(
                         job_info,
                         base_cv_path=personalization_config.base_cv_path,
                         base_cover_path=personalization_config.base_cover_letter_path,
                         claude_cli_path=personalization_config.claude_cli_path,
                         output_dir=personalization_config.output_dir,
+                        profile=profile_dict,
                     )
                     logger.info(f"Tailored CV saved: {cv_pdf_path}")
                 else:

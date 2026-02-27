@@ -69,6 +69,7 @@ def generate_tailored_content(
     base_cv_path: str,
     base_cover_path: str,
     claude_cli_path: str = "claude",
+    profile: dict | None = None,
 ) -> Tuple[str, str]:
     """Generate tailored CV and cover letter via Claude CLI.
 
@@ -102,21 +103,24 @@ LANGUAGE RULE (CRITICAL): Detect the language of the job description.
 - Default to Portuguese for br.indeed.com jobs.
 
 HIGH-CONVERSION RULES:
-1. OBJECTIVE: Write a single clear sentence stating the target role. Match the exact job title from the posting.
-2. SUMMARY: Max 3 lines. Lead with years of experience + strongest match to the job. Include a measurable achievement if possible.
-3. KEYWORDS: Extract the top 8-12 technologies/tools mentioned in BOTH the job posting AND the base CV. These are the intersection — what the candidate knows that the job requires. Order by relevance to the job.
+1. OBJECTIVE: Write a single clear sentence stating the target role. Match the exact job title from the posting. If the job is "backend", emphasize backend frameworks (Express, tRPC). If "frontend", emphasize React/Next.js. Companies search by FRAMEWORK, not just language.
+2. SUMMARY: Max 3 lines. Lead with years of experience + the SPECIFIC FRAMEWORKS that match the job (not just "TypeScript" — say "React.js and Node.js/Express"). Include a measurable achievement if possible. NEVER say "studying X" — either you know it or you don't.
+3. KEYWORDS: Extract the top 8-12 technologies/tools mentioned in BOTH the job posting AND the base CV. These are the intersection — what the candidate knows that the job requires. Prefer FRAMEWORKS over languages (React.js over JavaScript, Express over Node.js). Order by relevance to the job.
 4. SKILLS: Group by category. Put the most job-relevant category first. Within each category, lead with the skills mentioned in the job posting.
 5. EXPERIENCE: Include ALL jobs from the base CV. For each bullet:
    - Start with a strong ACTION VERB (Developed, Architected, Implemented, Optimized, Led, etc.)
-   - Include quantifiable results when possible (e.g., "reducing load time by 40%", "serving 50k+ users")
+   - BE SPECIFIC: name the exact tools/libraries/frameworks used (not "optimized performance" but "reduced TTFF by 30% using HLS chunk preloading")
+   - Include quantifiable results when possible (e.g., "reducing load time by 40%", "serving 50k+ users", "form with 200+ fields")
    - Highlight technologies/skills that match the job posting
    - Max 3-4 bullets per job, most relevant first
-6. PROJECTS: Select 2-3 projects from the base CV most relevant to this job. Each with name, GitHub URL, and a 1-line description emphasizing relevance.
+   - NEVER write vague bullets like "development and maintenance of modules" — always answer: WHAT tool, to achieve WHAT result, with WHAT measurable impact
+   - Keep "Contract (PJ)" or "Full-time (CLT)" labels from the base CV in the company field to clarify employment type
+6. PROJECTS: Select 2-3 projects from the base CV most relevant to this job. Each with name, URL, and a 1-line description emphasizing the SPECIFIC tech stack used and relevance to this job.
 7. EDUCATION: Include all education entries from the base CV.
 8. CERTIFICATIONS: List certifications and courses separately. Include provider name.
 9. LANGUAGES: Include language name and proficiency level with dash separator.
 10. ADDITIONAL INFO: Only include if there's something genuinely relevant not covered elsewhere (e.g., open-source contributions, community involvement). Leave empty string if nothing to add.
-11. COVER LETTER: 3-4 paragraphs. First paragraph: hook with specific interest in the company. Middle: concrete examples matching job requirements. Last: call to action.
+11. COVER LETTER: 3-4 paragraphs. First paragraph: hook with specific interest in the company. Middle: concrete examples matching job requirements with SPECIFIC technologies and results. Last: call to action.
 
 Return ONLY a JSON object with these exact keys:
 
@@ -178,7 +182,7 @@ CRITICAL: Return ONLY the raw JSON. No markdown, no explanation, no wrapping."""
 
     data = _call_claude(prompt, claude_cli_path)
 
-    cv_html = fill_cv_template(data)
-    cover_html = fill_cover_template(data)
+    cv_html = fill_cv_template(data, profile=profile)
+    cover_html = fill_cover_template(data, profile=profile)
 
     return cv_html, cover_html

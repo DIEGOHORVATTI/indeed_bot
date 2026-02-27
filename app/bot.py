@@ -126,6 +126,7 @@ class IndeedBot:
     def _apply_batch(self, browser, job_links: List[str]) -> None:
         language = self.config.camoufox.language
         personalization = self.config.personalization
+        profile = self.config.profile
 
         for job_url in job_links:
             if self.max_applies is not None and self.applied_count >= self.max_applies:
@@ -138,7 +139,7 @@ class IndeedBot:
             progress += f"] Applying to: {job_url}"
             self.logger.info(progress)
 
-            success = apply_to_job(browser, job_url, language, self.logger, personalization_config=personalization)
+            success = apply_to_job(browser, job_url, language, self.logger, personalization_config=personalization, profile_config=profile)
             if success:
                 self.applied_count += 1
             else:

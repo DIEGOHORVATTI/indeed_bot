@@ -1,3 +1,12 @@
+profile:
+  name: 'Diego Horvatti'
+  email: 'd.horvattid@gmail.com'
+  phone: '+55 49 991954455'
+  location: 'Florianópolis, SC, Brasil'
+  linkedin: 'https://www.linkedin.com/in/diego-horvatti/'
+  github: 'https://github.com/diegohorvatti'
+  portfolio: 'https://portfolio-ten-gray-50.vercel.app/'
+
 search:
   base_urls:
     # Grande Florianópolis - presencial/híbrido/remoto (radius=100 cobre Floripa, São José, Palhoça, etc.)

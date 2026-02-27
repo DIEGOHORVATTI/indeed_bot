@@ -9,10 +9,36 @@ from typing import Tuple
 
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent.parent / "assets"
 
+SEP = '<span class="sep">|</span>'
 
-def fill_cv_template(data: dict) -> str:
+
+def _build_contact_html(profile: dict) -> str:
+    """Build the contact line HTML from profile config."""
+    parts = [profile.get("email", ""), profile.get("phone", "")]
+    if profile.get("linkedin"):
+        parts.append(f'<a href="{profile["linkedin"]}">LinkedIn</a>')
+    if profile.get("github"):
+        parts.append(f'<a href="{profile["github"]}">GitHub</a>')
+    if profile.get("portfolio"):
+        parts.append(f'<a href="{profile["portfolio"]}">Portfolio</a>')
+    parts.append(profile.get("location", ""))
+    return SEP.join(p for p in parts if p)
+
+
+def _fill_profile(html: str, profile: dict) -> str:
+    """Replace profile placeholders in any template."""
+    html = html.replace("{{profile_name}}", profile.get("name", "").upper())
+    html = html.replace("{{profile_contact}}", _build_contact_html(profile))
+    return html
+
+
+def fill_cv_template(data: dict, profile: dict | None = None) -> str:
     """Fill the CV HTML template with AI-generated text content."""
     html = (TEMPLATES_DIR / "cv_template.html").read_text(encoding="utf-8")
+
+    # Profile placeholders
+    if profile:
+        html = _fill_profile(html, profile)
 
     # Simple text placeholders
     html = html.replace("{{objective}}", data.get("objective", "Full Stack Developer"))
@@ -89,17 +115,24 @@ def fill_cv_template(data: dict) -> str:
     return html
 
 
-def fill_cover_template(data: dict) -> str:
+def fill_cover_template(data: dict, profile: dict | None = None) -> str:
     """Fill the cover letter HTML template with AI-generated text content."""
     html = (TEMPLATES_DIR / "cover_template.html").read_text(encoding="utf-8")
+
+    # Profile placeholders
+    if profile:
+        html = _fill_profile(html, profile)
+
     html = html.replace("{{subtitle}}", data.get("cover_subtitle", data.get("subtitle", "Full Stack Developer")))
     html = html.replace("{{greeting}}", data.get("cover_greeting", "Prezado(a) Recrutador(a),"))
     html = html.replace("{{closing}}", data.get("cover_closing", "Atenciosamente"))
 
     today = date.today()
+    location = (profile or {}).get("location", "")
+    city = location.split(",")[0].strip() if location else ""
     months_pt = ["", "janeiro", "fevereiro", "março", "abril", "maio", "junho",
                  "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"]
-    date_str = f"Florianópolis, {today.day} de {months_pt[today.month]} de {today.year}"
+    date_str = f"{city}, {today.day} de {months_pt[today.month]} de {today.year}" if city else ""
     html = html.replace("{{date}}", date_str)
 
     paragraphs = data.get("cover_paragraphs", [])
@@ -127,6 +160,7 @@ def generate_pdfs_for_job(
     base_cover_path: str = "assets/base_cover_letter.md",
     claude_cli_path: str = "claude",
     output_dir: str = "output",
+    profile: dict | None = None,
 ) -> Tuple[str, str]:
     """Generate tailored CV and cover letter PDFs for a specific job."""
     from .cv_generator import generate_tailored_content
@@ -142,7 +176,7 @@ def generate_pdfs_for_job(
     cover_pdf_path = os.path.join(output_dir, f"cover_{prefix}.pdf")
 
     cv_html, cover_html = generate_tailored_content(
-        job_info, base_cv_path, base_cover_path, claude_cli_path
+        job_info, base_cv_path, base_cover_path, claude_cli_path, profile=profile
     )
 
     html_to_pdf(cv_html, cv_pdf_path)

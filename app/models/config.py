@@ -7,6 +7,16 @@ import yaml
 from pydantic import BaseModel, Field, ValidationError
 
 
+class ProfileConfig(BaseModel):
+    name: str = Field(..., description="Full name (e.g. 'Diego Horvatti')")
+    email: str = Field(..., description="Contact email")
+    phone: str = Field(..., description="Phone number with country code")
+    location: str = Field(..., description="City, State, Country")
+    linkedin: str = Field("", description="LinkedIn profile URL")
+    github: str = Field("", description="GitHub profile URL")
+    portfolio: str = Field("", description="Portfolio/website URL")
+
+
 class SearchConfig(BaseModel):
     base_url: str = Field(..., description="Indeed search URL with query params")
     base_urls: Optional[List[str]] = Field(None, description="Optional list of Indeed search URLs; if provided, supersedes base_url")
@@ -34,6 +44,7 @@ class PersonalizationConfig(BaseModel):
 
 
 class AppConfig(BaseModel):
+    profile: ProfileConfig
     search: SearchConfig
     camoufox: CamoufoxConfig
     personalization: PersonalizationConfig = PersonalizationConfig()
