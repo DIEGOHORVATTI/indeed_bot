@@ -5,9 +5,8 @@ import sys
 import time
 from typing import List
 
-from camoufox.sync_api import Camoufox
-
 from app.models import AppConfig
+from app.services.browser import create_browser
 from app.utils import domain_for_language, collect_indeed_apply_links, paginate_urls
 
 
@@ -20,20 +19,10 @@ def main() -> int:
 
     urls: List[str] = paginate_urls(base_url, start, end)
 
-    proxy_kwargs = {}
-    if getattr(cfg.camoufox, "proxy_server", None):
-        proxy_conf = {"server": cfg.camoufox.proxy_server}
-        if getattr(cfg.camoufox, "proxy_username", None):
-            proxy_conf["username"] = cfg.camoufox.proxy_username
-        if getattr(cfg.camoufox, "proxy_password", None):
-            proxy_conf["password"] = cfg.camoufox.proxy_password
-        proxy_kwargs["proxy"] = proxy_conf
-
-    with Camoufox(user_data_dir=cfg.camoufox.user_data_dir, persistent_context=True, **proxy_kwargs) as browser:
+    with create_browser(cfg.camoufox) as browser:
         page = browser.new_page()
         page.goto("https://" + domain_for_language(language))
 
-        # Require session
         cookies = page.context.cookies()
         if not any(c.get("name") == "PPID" for c in cookies):
             print("Not logged in. Please run scripts/get_token.py first.", file=sys.stderr)

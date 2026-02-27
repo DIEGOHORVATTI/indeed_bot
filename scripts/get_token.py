@@ -7,10 +7,8 @@ import time
 from typing import Optional
 import os
 
-from camoufox.sync_api import Camoufox
-
 from app.models import AppConfig
-from app.utils import domain_for_language
+from app.services.browser import create_browser
 
 
 LOGIN_URL_TMPL = "https://secure.indeed.com/auth?hl={hl}"
@@ -40,7 +38,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     language = (cfg.camoufox.language or "us").lower()
     hl = "en" if language in ("en", "us", "uk") else language
 
-    with Camoufox(user_data_dir=user_data_dir, persistent_context=True) as browser:
+    with create_browser(cfg.camoufox) as browser:
         page = browser.new_page()
         # Navigate to login
         page.goto(LOGIN_URL_TMPL.format(hl=hl))
