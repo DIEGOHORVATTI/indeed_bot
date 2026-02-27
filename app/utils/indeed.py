@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from typing import List, Optional
-from .selector import find_first, find_all, click_first
+from .selectors import find_first, find_all, click_first
 
 
 def domain_for_language(lang: Optional[str]) -> str:
@@ -77,7 +77,8 @@ def apply_to_job(browser, job_url: str, language: Optional[str], logger, persona
         # --- Personalization: scrape job and generate tailored PDFs ---
         if personalization_config and personalization_config.enabled:
             try:
-                from .cv_generator import scrape_job_description, generate_pdfs_for_job
+                from app.services.cv_generator import scrape_job_description
+                from app.services.pdf import generate_pdfs_for_job
                 job_info = scrape_job_description(page)
                 if job_info.get("description"):
                     logger.info(f"Generating tailored CV for: {job_info.get('title', '?')} at {job_info.get('company', '?')}")

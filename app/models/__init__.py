@@ -1,1 +1,1 @@
-from .config import AppConfig, CamoufoxConfig, SearchConfig  # noqa: F401
+from .config import AppConfig, CamoufoxConfig, SearchConfig, PersonalizationConfig  # noqa: F401
