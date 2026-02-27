@@ -143,14 +143,31 @@ def fill_cover_template(data: dict, profile: dict | None = None) -> str:
 
 
 def html_to_pdf(html_content: str, output_path: str) -> str:
-    """Convert HTML string to PDF using xhtml2pdf."""
-    from xhtml2pdf import pisa
+    """Convert HTML string to PDF using Playwright (Chromium)."""
+    import tempfile
+    from playwright.sync_api import sync_playwright
 
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
-    with open(output_path, "w+b") as f:
-        status = pisa.CreatePDF(html_content, dest=f)
-    if status.err:
-        raise RuntimeError(f"PDF generation failed with {status.err} errors")
+
+    with tempfile.NamedTemporaryFile(suffix=".html", delete=False, mode="w", encoding="utf-8") as tmp:
+        tmp.write(html_content)
+        tmp_path = tmp.name
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch()
+            page = browser.new_page()
+            page.goto(f"file://{tmp_path}", wait_until="networkidle")
+            page.pdf(
+                path=output_path,
+                format="A4",
+                print_background=True,
+                margin={"top": "0", "right": "0", "bottom": "0", "left": "0"},
+            )
+            browser.close()
+    finally:
+        os.unlink(tmp_path)
+
     return output_path
 
 

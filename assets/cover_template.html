@@ -5,8 +5,8 @@
   <meta charset="utf-8">
   <style>
     @page {
-      margin: 0;
       size: A4;
+      margin: 0;
     }
 
     * {
@@ -23,7 +23,7 @@
       background: #fff;
     }
 
-    /* ── Banner Header ── */
+    /* ── Banner Header (edge-to-edge) ── */
     .banner {
       background: #16213e;
       padding: 36px 44px 28px 44px;
@@ -91,24 +91,15 @@
       color: rgba(255, 255, 255, 0.3);
     }
 
-    /* ── Accent bar ── */
+    /* ── Accent bar (edge-to-edge) ── */
     .accent-bar {
       height: 4px;
       background: #e94560;
     }
 
-    /* ── Content ── */
+    /* ── Content (with A4 margins via padding) ── */
     .content {
-      padding: 28px 44px 36px 44px;
-    }
-
-    /* ── Title ── */
-    .letter-title {
-      font-size: 16pt;
-      font-weight: 700;
-      color: #16213e;
-      margin-bottom: 16px;
-      letter-spacing: 0.5px;
+      padding: 28px 44px 40px 44px;
     }
 
     /* ── Date ── */
