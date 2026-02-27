@@ -72,8 +72,7 @@ def generate_tailored_content(
 ) -> Tuple[str, str]:
     """Generate tailored CV and cover letter via Claude CLI.
 
-    Returns (cv_json_data, cover_json_data) as a single dict from AI,
-    then fills HTML templates. Returns (cv_html, cover_html).
+    Returns (cv_html, cover_html) after filling templates with AI-generated content.
     """
     from .pdf import fill_cv_template, fill_cover_template
 
@@ -81,7 +80,8 @@ def generate_tailored_content(
     base_cover = Path(base_cover_path).read_text(encoding="utf-8")
     desc = job_info.get("description", "")[:4000]
 
-    prompt = f"""You are tailoring a CV and cover letter for a specific job application.
+    prompt = f"""You are an expert recruiter and CV strategist. Your goal is to produce a HIGH-CONVERSION CV tailored to a specific job posting. The CV must pass ATS (Applicant Tracking Systems) and grab a recruiter's attention in under 10 seconds.
+
 You must ONLY return text content as JSON. Do NOT generate any HTML.
 
 JOB POSTING:
@@ -101,44 +101,80 @@ LANGUAGE RULE (CRITICAL): Detect the language of the job description.
 - If English → write everything in English.
 - Default to Portuguese for br.indeed.com jobs.
 
+HIGH-CONVERSION RULES:
+1. OBJECTIVE: Write a single clear sentence stating the target role. Match the exact job title from the posting.
+2. SUMMARY: Max 3 lines. Lead with years of experience + strongest match to the job. Include a measurable achievement if possible.
+3. KEYWORDS: Extract the top 8-12 technologies/tools mentioned in BOTH the job posting AND the base CV. These are the intersection — what the candidate knows that the job requires. Order by relevance to the job.
+4. SKILLS: Group by category. Put the most job-relevant category first. Within each category, lead with the skills mentioned in the job posting.
+5. EXPERIENCE: Include ALL jobs from the base CV. For each bullet:
+   - Start with a strong ACTION VERB (Developed, Architected, Implemented, Optimized, Led, etc.)
+   - Include quantifiable results when possible (e.g., "reducing load time by 40%", "serving 50k+ users")
+   - Highlight technologies/skills that match the job posting
+   - Max 3-4 bullets per job, most relevant first
+6. PROJECTS: Select 2-3 projects from the base CV most relevant to this job. Each with name, GitHub URL, and a 1-line description emphasizing relevance.
+7. EDUCATION: Include all education entries from the base CV.
+8. CERTIFICATIONS: List certifications and courses separately. Include provider name.
+9. LANGUAGES: Include language name and proficiency level with dash separator.
+10. ADDITIONAL INFO: Only include if there's something genuinely relevant not covered elsewhere (e.g., open-source contributions, community involvement). Leave empty string if nothing to add.
+11. COVER LETTER: 3-4 paragraphs. First paragraph: hook with specific interest in the company. Middle: concrete examples matching job requirements. Last: call to action.
+
 Return ONLY a JSON object with these exact keys:
 
 {{
-  "subtitle": "role title adapted for this job (e.g. 'Desenvolvedor Full Stack' or 'Full Stack Developer')",
+  "objective": "target role matching job title (e.g. 'Desenvolvedor Full Stack' or 'Full Stack Developer')",
   "section_summary": "section title (e.g. 'Resumo Profissional' or 'Professional Summary')",
   "summary": "2-3 sentence professional summary tailored to this job",
-  "section_skills": "section title (e.g. 'Competências' or 'Skills')",
+  "keywords": ["TypeScript", "React", "Node.js", "AWS", "..."],
+  "section_skills": "section title (e.g. 'Competências Técnicas' or 'Technical Skills')",
   "skills": [
     {{"label": "Front-End", "items": "React.js, Next.js, ..."}},
     {{"label": "Back-End", "items": "Node.js, Express, ..."}},
-    {{"label": "Linguagens", "items": "TypeScript, JavaScript"}},
-    {{"label": "Arquitetura", "items": "Clean Architecture, ..."}},
+    {{"label": "Languages", "items": "TypeScript, JavaScript"}},
+    {{"label": "Architecture", "items": "Clean Architecture, ..."}},
     {{"label": "DevOps", "items": "Docker, AWS, ..."}},
-    {{"label": "Testes", "items": "Jest, Cypress, ..."}}
+    {{"label": "Testing", "items": "Jest, Cypress, ..."}}
   ],
-  "section_experience": "section title (e.g. 'Experiência Profissional' or 'Professional Experience')",
+  "section_experience": "section title",
   "experience": [
     {{
       "title": "job title",
-      "date": "01/2024 – Presente",
+      "date": "01/2024 – Present",
       "company": "Company Name · Location",
-      "bullets": ["bullet 1", "bullet 2", "bullet 3"]
+      "bullets": ["action verb + achievement + tech", "...", "..."]
+    }}
+  ],
+  "section_projects": "section title (e.g. 'Projetos' or 'Projects')",
+  "projects": [
+    {{
+      "name": "Project Name",
+      "url": "https://github.com/...",
+      "description": "one-line description highlighting relevance to this job"
     }}
   ],
   "section_education": "section title",
+  "education": [
+    {{
+      "degree": "Computer Science – Bachelor",
+      "institution": "University Name",
+      "period": "2020–2025"
+    }}
+  ],
+  "section_certifications": "section title (e.g. 'Certificações' or 'Certifications')",
+  "certifications": ["Front End Engineer – Ebac", "Next.js – Udemy"],
   "section_languages": "section title",
-  "cover_subtitle": "subtitle for cover letter header (can differ from CV subtitle)",
+  "languages": [
+    {{"name": "English", "level": "B2 Upper-intermediate"}},
+    {{"name": "Portuguese", "level": "Fluent"}}
+  ],
+  "section_additional": "section title (e.g. 'Informações Adicionais' or 'Additional Information')",
+  "additional_info": "relevant additional info or empty string",
+  "cover_subtitle": "subtitle for cover letter header",
   "cover_greeting": "Prezado(a) Equipe de Recrutamento da CompanyX," or "Dear Hiring Team at CompanyX,",
-  "cover_paragraphs": ["paragraph 1 text", "paragraph 2 text", "paragraph 3 text", "paragraph 4 text"],
+  "cover_paragraphs": ["paragraph 1", "paragraph 2", "paragraph 3"],
   "cover_closing": "Atenciosamente" or "Sincerely"
 }}
 
-RULES:
-- Keep ALL facts from the base CV truthful. Never invent experience.
-- Reorder skills and emphasize bullets relevant to THIS job.
-- Experience: include ALL 5 jobs from the base CV. Adapt bullet text to highlight relevance.
-- Cover letter: 3-5 paragraphs, specific to this company and role.
-- Return ONLY the raw JSON. No markdown, no explanation."""
+CRITICAL: Return ONLY the raw JSON. No markdown, no explanation, no wrapping."""
 
     data = _call_claude(prompt, claude_cli_path)
 

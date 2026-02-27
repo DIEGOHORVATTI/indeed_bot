@@ -4,35 +4,45 @@
 <meta charset="utf-8">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; color: #333; line-height: 1.4; padding: 30px 40px; }
-  .header { text-align: center; margin-bottom: 8px; }
-  .header h1 { font-size: 22pt; font-weight: 800; color: #1a1a1a; letter-spacing: 2px; margin-bottom: 2px; }
-  .header .subtitle { font-size: 10pt; color: #555; letter-spacing: 1px; margin-bottom: 6px; }
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; color: #333; line-height: 1.4; padding: 24px 36px; }
+  .header { text-align: center; margin-bottom: 6px; }
+  .header h1 { font-size: 20pt; font-weight: 800; color: #1a1a1a; letter-spacing: 2px; margin-bottom: 1px; }
+  .header .objective { font-size: 10.5pt; color: #222; font-weight: 600; margin-bottom: 4px; }
   .header .contact { font-size: 8.5pt; color: #444; }
   .header .contact a { color: #444; text-decoration: none; }
   .header .contact span.sep { margin: 0 4px; color: #999; }
-  hr { border: none; border-top: 1.5px solid #222; margin: 10px 0; }
-  h2 { font-size: 11pt; font-weight: 700; color: #1a1a1a; letter-spacing: 1px; margin: 12px 0 4px 0; text-transform: uppercase; border-bottom: 1px solid #ccc; padding-bottom: 2px; }
-  .summary { font-size: 9.5pt; color: #444; margin-bottom: 6px; }
-  .skills-grid { font-size: 9pt; }
-  .skills-grid .row { margin-bottom: 2px; }
+  hr { border: none; border-top: 1.5px solid #222; margin: 8px 0; }
+  h2 { font-size: 10.5pt; font-weight: 700; color: #1a1a1a; letter-spacing: 1px; margin: 10px 0 3px 0; text-transform: uppercase; border-bottom: 1px solid #ccc; padding-bottom: 2px; }
+  .summary { font-size: 9pt; color: #444; margin-bottom: 4px; }
+  .keywords { margin-bottom: 6px; }
+  .keywords .badge { display: inline-block; background: #f0f0f0; border: 1px solid #ddd; border-radius: 3px; padding: 1px 6px; font-size: 8pt; color: #333; margin: 1px 2px; font-weight: 600; }
+  .skills-grid { font-size: 8.5pt; }
+  .skills-grid .row { margin-bottom: 1px; }
   .skills-grid .label { font-weight: 700; }
-  .job { margin-bottom: 8px; }
+  .job { margin-bottom: 6px; }
   .job-header { display: flex; justify-content: space-between; align-items: baseline; }
-  .job-title { font-weight: 700; font-size: 10pt; }
-  .job-date { font-size: 9pt; color: #666; white-space: nowrap; }
-  .job-company { font-size: 9pt; color: #555; margin-bottom: 2px; }
-  .job ul { margin-left: 16px; font-size: 9pt; }
-  .job ul li { margin-bottom: 1px; }
-  .edu, .courses, .languages-section { font-size: 9pt; }
-  .edu strong, .courses strong { font-weight: 700; }
+  .job-title { font-weight: 700; font-size: 9.5pt; }
+  .job-date { font-size: 8.5pt; color: #666; white-space: nowrap; }
+  .job-company { font-size: 8.5pt; color: #555; margin-bottom: 1px; }
+  .job ul { margin-left: 14px; font-size: 8.5pt; }
+  .job ul li { margin-bottom: 0; }
+  .edu { font-size: 8.5pt; margin-bottom: 2px; }
+  .edu strong { font-weight: 700; }
+  .certs { font-size: 8.5pt; }
+  .certs li { margin-bottom: 0; }
+  .projects { font-size: 8.5pt; }
+  .projects .project { margin-bottom: 2px; }
+  .projects .project-name { font-weight: 700; }
+  .projects .project-name a { color: #333; text-decoration: none; }
+  .languages-section { font-size: 8.5pt; }
+  .additional { font-size: 8.5pt; color: #555; }
 </style>
 </head>
 <body>
 
 <div class="header">
   <h1>DIEGO HORVATTI</h1>
-  <div class="subtitle">{{subtitle}}</div>
+  <div class="objective">{{objective}}</div>
   <div class="contact">
     d.horvattid@gmail.com<span class="sep">|</span>+55 49 991954455<span class="sep">|</span><a href="https://www.linkedin.com/in/diego-horvatti/">LinkedIn</a><span class="sep">|</span><a href="https://github.com/diegohorvatti">GitHub</a><span class="sep">|</span><a href="https://portfolio-ten-gray-50.vercel.app/">Portfolio</a><span class="sep">|</span>Florianópolis, SC, Brasil
   </div>
@@ -41,6 +51,7 @@
 
 <h2>{{section_summary}}</h2>
 <p class="summary">{{summary}}</p>
+<div class="keywords">{{keywords}}</div>
 
 <h2>{{section_skills}}</h2>
 <div class="skills-grid">
@@ -50,16 +61,27 @@
 <h2>{{section_experience}}</h2>
 {{experience}}
 
+<h2>{{section_projects}}</h2>
+<div class="projects">
+  {{projects}}
+</div>
+
 <h2>{{section_education}}</h2>
 <div class="edu">
-  <strong>Ciência da Computação – Bacharelado</strong> | Universidade Uniritter | 2020–2025<br>
-  <strong>Cursos:</strong> Front End Engineer (Ebac) · Next.js (Udemy)
+  {{education}}
+</div>
+
+<h2>{{section_certifications}}</h2>
+<div class="certs">
+  {{certifications}}
 </div>
 
 <h2>{{section_languages}}</h2>
 <div class="languages-section">
-  Inglês – B2 Intermediário-avançado &nbsp;|&nbsp; Português – Fluente
+  {{languages}}
 </div>
+
+{{additional_info}}
 
 </body>
 </html>

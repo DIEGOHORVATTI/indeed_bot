@@ -13,19 +13,30 @@ TEMPLATES_DIR = Path(__file__).resolve().parent.parent.parent / "assets"
 def fill_cv_template(data: dict) -> str:
     """Fill the CV HTML template with AI-generated text content."""
     html = (TEMPLATES_DIR / "cv_template.html").read_text(encoding="utf-8")
-    html = html.replace("{{subtitle}}", data.get("subtitle", "Full Stack Developer"))
+
+    # Simple text placeholders
+    html = html.replace("{{objective}}", data.get("objective", "Full Stack Developer"))
     html = html.replace("{{section_summary}}", data.get("section_summary", "Resumo Profissional"))
     html = html.replace("{{summary}}", data.get("summary", ""))
     html = html.replace("{{section_skills}}", data.get("section_skills", "Competências"))
     html = html.replace("{{section_experience}}", data.get("section_experience", "Experiência Profissional"))
+    html = html.replace("{{section_projects}}", data.get("section_projects", "Projetos"))
     html = html.replace("{{section_education}}", data.get("section_education", "Formação"))
+    html = html.replace("{{section_certifications}}", data.get("section_certifications", "Certificações"))
     html = html.replace("{{section_languages}}", data.get("section_languages", "Idiomas"))
 
+    # Keywords as inline badges
+    keywords = data.get("keywords", [])
+    keywords_html = "".join(f'<span class="badge">{kw}</span>' for kw in keywords)
+    html = html.replace("{{keywords}}", keywords_html)
+
+    # Skills grid
     skills_html = ""
     for skill in data.get("skills", []):
         skills_html += f'<div class="row"><span class="label">{skill["label"]}:</span> {skill["items"]}</div>\n'
     html = html.replace("{{skills}}", skills_html)
 
+    # Experience blocks
     exp_html = ""
     for job in data.get("experience", []):
         bullets = "".join(f"<li>{b}</li>" for b in job.get("bullets", []))
@@ -35,6 +46,45 @@ def fill_cv_template(data: dict) -> str:
   <ul>{bullets}</ul>
 </div>\n"""
     html = html.replace("{{experience}}", exp_html)
+
+    # Projects
+    projects_html = ""
+    for proj in data.get("projects", []):
+        link = proj.get("url", "")
+        name = proj.get("name", "")
+        desc = proj.get("description", "")
+        if link:
+            projects_html += f'<div class="project"><span class="project-name"><a href="{link}">{name}</a></span> — {desc}</div>\n'
+        else:
+            projects_html += f'<div class="project"><span class="project-name">{name}</span> — {desc}</div>\n'
+    html = html.replace("{{projects}}", projects_html)
+
+    # Education (dynamic)
+    edu_html = ""
+    for edu in data.get("education", []):
+        edu_html += f'<strong>{edu.get("degree", "")}</strong> | {edu.get("institution", "")} | {edu.get("period", "")}<br>\n'
+    html = html.replace("{{education}}", edu_html)
+
+    # Certifications
+    certs = data.get("certifications", [])
+    if certs:
+        certs_html = "<ul>" + "".join(f"<li>{c}</li>" for c in certs) + "</ul>"
+    else:
+        certs_html = ""
+    html = html.replace("{{certifications}}", certs_html)
+
+    # Languages (dynamic)
+    langs = data.get("languages", [])
+    langs_html = " &nbsp;|&nbsp; ".join(f'{l["name"]} – {l["level"]}' for l in langs)
+    html = html.replace("{{languages}}", langs_html)
+
+    # Additional info (optional section)
+    additional = data.get("additional_info", "")
+    if additional:
+        additional_html = f'<h2>{data.get("section_additional", "Informações Adicionais")}</h2>\n<p class="additional">{additional}</p>'
+    else:
+        additional_html = ""
+    html = html.replace("{{additional_info}}", additional_html)
 
     return html
 
