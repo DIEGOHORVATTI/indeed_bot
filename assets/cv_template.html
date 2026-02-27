@@ -20,68 +20,98 @@
       font-size: 9.5pt;
       color: #2d2d2d;
       line-height: 1.45;
-      padding: 28px 34px;
       background: #fff;
     }
 
-    /* ── Header ── */
-    .header {
-      text-align: center;
-      padding-bottom: 10px;
+    /* ── Banner Header ── */
+    .banner {
+      background: #16213e;
+      padding: 24px 34px 18px 34px;
+      color: #fff;
+      position: relative;
+      overflow: hidden;
     }
 
-    .header h1 {
+    .banner::before {
+      content: '';
+      position: absolute;
+      top: -50px;
+      right: -30px;
+      width: 180px;
+      height: 180px;
+      border-radius: 50%;
+      background: rgba(233, 69, 96, 0.15);
+    }
+
+    .banner::after {
+      content: '';
+      position: absolute;
+      bottom: -70px;
+      left: -40px;
+      width: 240px;
+      height: 240px;
+      border-radius: 50%;
+      background: rgba(233, 69, 96, 0.08);
+    }
+
+    .banner h1 {
       font-size: 22pt;
       font-weight: 800;
-      color: #1a1a2e;
       letter-spacing: 3px;
       margin-bottom: 2px;
+      position: relative;
+      z-index: 1;
     }
 
-    .header .objective {
+    .banner .objective {
       font-size: 11pt;
-      color: #0f3460;
+      color: #e94560;
       font-weight: 600;
       letter-spacing: 0.5px;
       margin-bottom: 6px;
+      position: relative;
+      z-index: 1;
     }
 
-    .header .contact {
+    .banner .contact {
       font-size: 8.5pt;
-      color: #555;
-      line-height: 1.6;
+      color: rgba(255, 255, 255, 0.75);
+      position: relative;
+      z-index: 1;
     }
 
-    .header .contact a {
-      color: #0f3460;
+    .banner .contact a {
+      color: rgba(255, 255, 255, 0.9);
       text-decoration: none;
       font-weight: 600;
     }
 
-    .header .contact span.sep {
+    .banner .contact .sep {
       margin: 0 6px;
-      color: #ccc;
-      font-weight: 300;
+      color: rgba(255, 255, 255, 0.3);
     }
 
-    /* ── Divider ── */
-    .divider {
-      border: none;
-      height: 2px;
-      background: linear-gradient(90deg, #0f3460 0%, #16213e 50%, #0f3460 100%);
-      margin: 8px 0 10px 0;
+    /* ── Accent bar ── */
+    .accent-bar {
+      height: 3px;
+      background: #e94560;
+    }
+
+    /* ── Main content ── */
+    .main {
+      padding: 10px 34px 20px 34px;
     }
 
     /* ── Section headings ── */
     h2 {
       font-size: 9.5pt;
       font-weight: 700;
-      color: #0f3460;
+      color: #16213e;
       letter-spacing: 1.5px;
       text-transform: uppercase;
-      margin: 11px 0 4px 0;
+      margin: 10px 0 4px 0;
       padding-bottom: 3px;
-      border-bottom: 1.5px solid #e8e8e8;
+      border-bottom: 2px solid #e8e8e8;
     }
 
     /* ── Summary ── */
@@ -99,14 +129,13 @@
 
     .keywords .badge {
       display: inline-block;
-      background: #eef2f7;
-      border: 1px solid #d0d9e4;
-      border-radius: 4px;
+      background: #16213e;
+      border-radius: 3px;
       padding: 2px 8px;
       font-size: 7.5pt;
-      color: #0f3460;
+      color: #fff;
       margin: 1.5px 2px;
-      font-weight: 700;
+      font-weight: 600;
       letter-spacing: 0.3px;
     }
 
@@ -122,7 +151,7 @@
 
     .skills-grid .label {
       font-weight: 700;
-      color: #1a1a2e;
+      color: #16213e;
     }
 
     /* ── Experience ── */
@@ -139,19 +168,19 @@
     .job-title {
       font-weight: 700;
       font-size: 9.5pt;
-      color: #1a1a2e;
+      color: #16213e;
     }
 
     .job-date {
       font-size: 8pt;
-      color: #777;
+      color: #888;
       white-space: nowrap;
       font-style: italic;
     }
 
     .job-company {
       font-size: 8.5pt;
-      color: #555;
+      color: #666;
       margin-bottom: 2px;
     }
 
@@ -178,11 +207,11 @@
 
     .projects .project-name {
       font-weight: 700;
-      color: #1a1a2e;
+      color: #16213e;
     }
 
     .projects .project-name a {
-      color: #0f3460;
+      color: #e94560;
       text-decoration: none;
     }
 
@@ -194,7 +223,7 @@
 
     .edu strong {
       font-weight: 700;
-      color: #1a1a2e;
+      color: #16213e;
     }
 
     .certs {
@@ -225,48 +254,50 @@
 
 <body>
 
-  <div class="header">
+  <div class="banner">
     <h1>{{profile_name}}</h1>
     <div class="objective">{{objective}}</div>
     <div class="contact">
       {{profile_contact}}
     </div>
   </div>
-  <hr class="divider">
+  <div class="accent-bar"></div>
 
-  <h2>{{section_summary}}</h2>
-  <p class="summary">{{summary}}</p>
-  <div class="keywords">{{keywords}}</div>
+  <div class="main">
+    <h2>{{section_summary}}</h2>
+    <p class="summary">{{summary}}</p>
+    <div class="keywords">{{keywords}}</div>
 
-  <h2>{{section_skills}}</h2>
-  <div class="skills-grid">
-    {{skills}}
+    <h2>{{section_skills}}</h2>
+    <div class="skills-grid">
+      {{skills}}
+    </div>
+
+    <h2>{{section_experience}}</h2>
+    {{experience}}
+
+    <h2>{{section_projects}}</h2>
+    <div class="projects">
+      {{projects}}
+    </div>
+
+    <h2>{{section_education}}</h2>
+    <div class="edu">
+      {{education}}
+    </div>
+
+    <h2>{{section_certifications}}</h2>
+    <div class="certs">
+      {{certifications}}
+    </div>
+
+    <h2>{{section_languages}}</h2>
+    <div class="languages-section">
+      {{languages}}
+    </div>
+
+    {{additional_info}}
   </div>
-
-  <h2>{{section_experience}}</h2>
-  {{experience}}
-
-  <h2>{{section_projects}}</h2>
-  <div class="projects">
-    {{projects}}
-  </div>
-
-  <h2>{{section_education}}</h2>
-  <div class="edu">
-    {{education}}
-  </div>
-
-  <h2>{{section_certifications}}</h2>
-  <div class="certs">
-    {{certifications}}
-  </div>
-
-  <h2>{{section_languages}}</h2>
-  <div class="languages-section">
-    {{languages}}
-  </div>
-
-  {{additional_info}}
 
 </body>
 
