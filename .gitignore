@@ -209,3 +209,5 @@ __marimo__/
 # indeed_bot specific files
 logs.txt
 user_data_dir/
+output/
+.DS_Store
