@@ -25,9 +25,18 @@ class CamoufoxConfig(BaseModel):
     proxy_password: Optional[str] = Field(None, description="Proxy password")
 
 
+class PersonalizationConfig(BaseModel):
+    enabled: bool = Field(False, description="Enable AI-tailored CV/cover letter per job")
+    base_cv_path: str = Field("assets/base_cv.md", description="Path to base CV markdown")
+    base_cover_letter_path: str = Field("assets/base_cover_letter.md", description="Path to base cover letter markdown")
+    claude_cli_path: str = Field("claude", description="Path to claude CLI binary")
+    output_dir: str = Field("output", description="Directory to save generated PDFs")
+
+
 class AppConfig(BaseModel):
     search: SearchConfig
     camoufox: CamoufoxConfig
+    personalization: PersonalizationConfig = PersonalizationConfig()
 
     @classmethod
     def load(cls, path: str | Path = "config.yaml") -> "AppConfig":
