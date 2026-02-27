@@ -64,13 +64,38 @@ def click_and_wait(element, timeout: float = 5.0) -> None:
         time.sleep(timeout)
 
 
-def apply_to_job(browser, job_url: str, language: Optional[str], logger) -> bool:
+def apply_to_job(browser, job_url: str, language: Optional[str], logger, personalization_config=None) -> bool:
     """Open a new tab, apply to the job, log the result, and close the tab."""
     page = browser.new_page()
+    cv_pdf_path = None
+    cover_pdf_path = None
     try:
         page.goto(job_url)
         page.wait_for_load_state("domcontentloaded")
         time.sleep(3)
+
+        # --- Personalization: scrape job and generate tailored PDFs ---
+        if personalization_config and personalization_config.enabled:
+            try:
+                from .cv_generator import scrape_job_description, generate_pdfs_for_job
+                job_info = scrape_job_description(page)
+                if job_info.get("description"):
+                    logger.info(f"Generating tailored CV for: {job_info.get('title', '?')} at {job_info.get('company', '?')}")
+                    cv_pdf_path, cover_pdf_path = generate_pdfs_for_job(
+                        job_info,
+                        base_cv_path=personalization_config.base_cv_path,
+                        base_cover_path=personalization_config.base_cover_letter_path,
+                        claude_cli_path=personalization_config.claude_cli_path,
+                        output_dir=personalization_config.output_dir,
+                    )
+                    logger.info(f"Tailored CV saved: {cv_pdf_path}")
+                else:
+                    logger.warning("Could not scrape job description, using default resume.")
+            except Exception as e:
+                logger.warning(f"CV generation failed, using default resume: {e}")
+                cv_pdf_path = None
+                cover_pdf_path = None
+
         # Try to find the apply button using robust, language-agnostic selectors
         apply_selectors = [
             'button:has(span[class*="css-1ebo7dz"])',
@@ -114,17 +139,71 @@ def apply_to_job(browser, job_url: str, language: Optional[str], logger) -> bool
                 logger.warning(f"Timeout applying to {job_url}, closing tab and moving to next.")
                 break
             current_url = page.url
-            # Resume step: select resume card if present
+            # Resume step: upload custom PDF or select resume card
             resume_card = find_first(page, ['[data-testid="FileResumeCardHeader-title"]'], logger=logger, desc="resume card")
             if resume_card:
-                # Click the resume card (or its parent if needed)
-                try:
-                    resume_card.click()
-                except Exception:
-                    parent = resume_card.evaluate_handle('node => node.parentElement')
-                    if parent:
-                        parent.click()
+                uploaded = False
+                if cv_pdf_path:
+                    # Try to upload custom tailored CV
+                    try:
+                        # Look for file input directly
+                        file_input = find_first(page, ['input[type="file"]'], logger=logger, desc="file upload input")
+                        if not file_input:
+                            # Try clicking upload button to reveal file input
+                            upload_btn = find_first(page, [
+                                'button:visible:has-text("Upload")',
+                                'button:visible:has-text("Enviar")',
+                                'button:visible:has-text("Carregar")',
+                                'a:visible:has-text("Upload")',
+                                'a:visible:has-text("upload")',
+                                '[data-testid="ResumeUploadButton"]',
+                            ], logger=logger, desc="upload resume button")
+                            if upload_btn:
+                                upload_btn.click()
+                                time.sleep(1)
+                                file_input = find_first(page, ['input[type="file"]'], logger=logger, desc="file input after click")
+                        if file_input:
+                            file_input.set_input_files(cv_pdf_path)
+                            time.sleep(2)
+                            uploaded = True
+                            logger.info(f"Uploaded custom CV: {cv_pdf_path}")
+                    except Exception as e:
+                        logger.warning(f"Custom CV upload failed, using saved resume: {e}")
+
+                if not uploaded:
+                    # Fallback: click the existing resume card
+                    try:
+                        resume_card.click()
+                    except Exception:
+                        parent = resume_card.evaluate_handle('node => node.parentElement')
+                        if parent:
+                            parent.click()
                 time.sleep(1)
+
+                # Try to upload cover letter if field exists
+                if cover_pdf_path:
+                    try:
+                        cover_input = find_first(page, [
+                            '[data-testid="CoverLetterInput"] input[type="file"]',
+                            'input[accept*="pdf"][name*="cover"]',
+                        ], logger=logger, desc="cover letter upload")
+                        if not cover_input:
+                            cover_btn = find_first(page, [
+                                'button:visible:has-text("cover letter")',
+                                'button:visible:has-text("carta")',
+                                'a:visible:has-text("cover letter")',
+                                'a:visible:has-text("carta de apresentação")',
+                            ], logger=logger, desc="cover letter button")
+                            if cover_btn:
+                                cover_btn.click()
+                                time.sleep(1)
+                                cover_input = find_first(page, ['input[type="file"]'], logger=logger, desc="cover letter file input")
+                        if cover_input:
+                            cover_input.set_input_files(cover_pdf_path)
+                            time.sleep(2)
+                            logger.info(f"Uploaded cover letter: {cover_pdf_path}")
+                    except Exception as e:
+                        logger.debug(f"Cover letter upload not available: {e}")
                 if click_first(page, ['button:visible:has-text("Continuer")', 'button:visible:has-text("Continue")'], timeout_ms=3000, logger=logger, desc="continue button"):
                     # go to next step
                     time.sleep(0.5)
