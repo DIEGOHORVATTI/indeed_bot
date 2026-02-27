@@ -1,18 +1,21 @@
-# Indeed Auto-Apply Bot Configuration
-# Edit these fields to customize your job search and application process
-
-
 search:
-  base_url: "https://www.indeed.com/jobs?q=forklift%20operator&latLong=39.83442%2C-105.00954&locString=Denver%2C%20CO%2C%2080221"
+  base_urls:
+    # Grande Florianópolis - presencial/híbrido/remoto (radius=100 cobre Floripa, São José, Palhoça, etc.)
+    - 'https://br.indeed.com/jobs?q=full+stack%2C+nodejs%2C+reactjs%2C+nextjs%2C+javascript%2C+web+scraping%2C+IA+automa%C3%A7%C3%A3o&l=Florian%C3%B3polis%2C+SC&fromage=7&radius=100'
+    # Vagas no Brasil - SOMENTE REMOTO (query unificada)
+    - 'https://br.indeed.com/jobs?q=full+stack%2C+nodejs%2C+reactjs%2C+nextjs&l=Brasil&sc=0kf%3Aattr%28DSQF7%29%3B&from=searchOnDesktopSerp&vjk=515aadd585ad7672'
 
+  base_url: 'https://br.indeed.com/jobs?q=full+stack&l=Florian%C3%B3polis%2C+SC&fromage=7&radius=50'
   start: 0
-  end: 100 # default is 100, you can set it to 1000 or more for larger searches (not recommanded though)
+  end: 100
 
 camoufox:
-  user_data_dir: "C:\\camoufox_profile"
-  language: "us" # uk, us, fr, de, es, it, nl, pt, pl, ro, tr, ru, cn etc...
+  user_data_dir: 'user_data_dir'
+  language: 'br'
 
-
-
-
-
+personalization:
+  enabled: true
+  base_cv_path: 'assets/base_cv.md'
+  base_cover_letter_path: 'assets/base_cover_letter.md'
+  claude_cli_path: 'claude'
+  output_dir: 'output'
