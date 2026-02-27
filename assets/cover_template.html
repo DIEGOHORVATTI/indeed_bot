@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 10.5pt; color: #333; line-height: 1.5; padding: 30px 40px; }
+  .header { text-align: center; margin-bottom: 8px; }
+  .header h1 { font-size: 22pt; font-weight: 800; color: #1a1a1a; letter-spacing: 2px; margin-bottom: 2px; }
+  .header .subtitle { font-size: 10pt; color: #555; letter-spacing: 1px; margin-bottom: 6px; }
+  .header .contact { font-size: 8.5pt; color: #444; }
+  .header .contact a { color: #444; text-decoration: none; }
+  .header .contact span.sep { margin: 0 4px; color: #999; }
+  hr { border: none; border-top: 1.5px solid #222; margin: 10px 0 16px 0; }
+  .date { font-size: 9.5pt; color: #666; margin-bottom: 16px; }
+  .greeting { margin-bottom: 12px; }
+  .body-text p { margin-bottom: 10px; font-size: 10.5pt; text-align: justify; }
+  .closing { margin-top: 20px; }
+  .closing .name { font-weight: 700; margin-top: 4px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>DIEGO HORVATTI</h1>
+  <div class="subtitle">{{subtitle}}</div>
+  <div class="contact">
+    d.horvattid@gmail.com<span class="sep">|</span>+55 49 991954455<span class="sep">|</span><a href="https://www.linkedin.com/in/diego-horvatti/">LinkedIn</a><span class="sep">|</span><a href="https://github.com/diegohorvatti">GitHub</a><span class="sep">|</span><a href="https://portfolio-ten-gray-50.vercel.app/">Portfolio</a><span class="sep">|</span>Florianópolis, SC, Brasil
+  </div>
+</div>
+<hr>
+
+<div class="date">{{date}}</div>
+
+<div class="greeting">{{greeting}}</div>
+
+<div class="body-text">
+  {{paragraphs}}
+</div>
+
+<div class="closing">
+  {{closing}},<br>
+  <div class="name">Diego Horvatti</div>
+</div>
+
+</body>
+</html>
