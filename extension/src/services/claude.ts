@@ -15,6 +15,7 @@ interface BackendAnswerRequest {
     min?: string;
     max?: string;
     pattern?: string;
+    placeholder?: string;
   };
   errorContext?: string;
 }

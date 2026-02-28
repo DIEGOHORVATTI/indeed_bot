@@ -65,6 +65,7 @@ async function askClaude(
             min: constraints.min,
             max: constraints.max,
             pattern: constraints.pattern,
+            placeholder: constraints.placeholder,
           } : undefined,
           errorContext,
         },
@@ -675,13 +676,31 @@ async function handleQuestionnaire(): Promise<{ needsUserInput: boolean; fieldLa
     if (!label) continue;
 
     const constraints = getInputConstraints(inp);
-    log(`📝 Field: "${label}" [type=${constraints.type}, required=${constraints.required}${constraints.maxLength ? `, maxLen=${constraints.maxLength}` : ''}${constraints.min ? `, min=${constraints.min}` : ''}${constraints.max ? `, max=${constraints.max}` : ''}${constraints.pattern ? `, pattern=${constraints.pattern}` : ''}]`);
+    log(`📝 Field: "${label}" [type=${constraints.type}, required=${constraints.required}${constraints.placeholder ? `, placeholder=${constraints.placeholder}` : ''}${constraints.maxLength ? `, maxLen=${constraints.maxLength}` : ''}${constraints.min ? `, min=${constraints.min}` : ''}${constraints.max ? `, max=${constraints.max}` : ''}${constraints.pattern ? `, pattern=${constraints.pattern}` : ''}]`);
+
+    // Enrich the question with format/type hints so AI knows what to produce
+    let enrichedLabel = label;
+    if (constraints.placeholder) {
+      // Date fields: tell AI the exact format expected
+      if (constraints.placeholder.match(/[DMY]{2,4}/i)) {
+        enrichedLabel = `${label} (format: ${constraints.placeholder})`;
+      } else if (!label.toLowerCase().includes(constraints.placeholder.toLowerCase())) {
+        enrichedLabel = `${label} (${constraints.placeholder})`;
+      }
+    }
+    if (constraints.type === 'number') {
+      enrichedLabel = `${enrichedLabel} (answer must be a number only, no text)`;
+    } else if (constraints.type === 'tel') {
+      enrichedLabel = `${enrichedLabel} (phone number, digits only)`;
+    } else if (constraints.type === 'email') {
+      enrichedLabel = `${enrichedLabel} (email address)`;
+    }
 
     let filled = false;
     let errorContext: string | undefined;
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-      const answer = await askClaude(label, undefined, constraints, errorContext);
+      const answer = await askClaude(enrichedLabel, undefined, constraints, errorContext);
       if (!answer) {
         const isRequired = constraints.required || label.includes('*');
         if (isRequired) return { needsUserInput: true, fieldLabel: label };
@@ -905,11 +924,22 @@ async function handlePostClickErrors(pageErrors: string[]): Promise<'fixed' | 'f
 
     const constraints = getInputConstraints(inp);
     const currentValue = inp.value;
-    const errorContext = `After submitting the form, field "${label}" has error: "${domError}". Current value: "${currentValue}". Page errors: ${pageErrors.join('; ')}. Fix the answer.`;
+
+    // Enrich label with format hints for retry
+    let enrichedLabel = label;
+    if (constraints.placeholder?.match(/[DMY]{2,4}/i)) {
+      enrichedLabel = `${label} (format: ${constraints.placeholder})`;
+    } else if (constraints.type === 'number') {
+      enrichedLabel = `${label} (answer must be a number only)`;
+    } else if (constraints.type === 'tel') {
+      enrichedLabel = `${label} (phone number)`;
+    }
+
+    const errorContext = `After submitting the form, field "${enrichedLabel}" has error: "${domError}". Current value: "${currentValue}". Page errors: ${pageErrors.join('; ')}. Fix the answer.`;
 
     log(`🔧 Fixing field "${label}" — error: "${domError}", current: "${currentValue}"`);
 
-    const answer = await askClaude(label, undefined, constraints, errorContext);
+    const answer = await askClaude(enrichedLabel, undefined, constraints, errorContext);
     if (answer) {
       fillInput(inp, answer);
       log(`🔧 Fixed "${label}" with new answer: "${answer}"`);
@@ -980,6 +1010,110 @@ async function handlePostClickErrors(pageErrors: string[]): Promise<'fixed' | 'f
   }
 
   return anyFixed ? 'fixed' : 'failed';
+}
+
+// ── MutationObserver-based Post-Click Error Detection ──
+
+/**
+ * After clicking Continue/Submit, use MutationObserver to watch for:
+ * - aria-invalid attribute changes (React sets this on validation failure)
+ * - New error elements (role="alert", .error, etc.) inserted into DOM
+ * - validationMessage changes on inputs
+ * Returns collected error messages, or empty array if no errors detected within timeout.
+ */
+function waitForPostClickErrors(timeoutMs: number): Promise<string[]> {
+  return new Promise(resolve => {
+    const errors: string[] = [];
+    const seen = new Set<string>();
+    let resolved = false;
+
+    const finish = () => {
+      if (resolved) return;
+      resolved = true;
+      observer.disconnect();
+      // Also do a final sweep of aria-invalid elements
+      const ariaInvalids = document.querySelectorAll('[aria-invalid="true"]');
+      for (const el of ariaInvalids) {
+        // Find associated error text
+        const errId = el.getAttribute('aria-errormessage') || el.getAttribute('aria-describedby');
+        if (errId) {
+          const errEl = document.getElementById(errId);
+          const text = errEl?.textContent?.trim();
+          if (text && !seen.has(text)) {
+            errors.push(text);
+            seen.add(text);
+          }
+        }
+        // Check parent for error elements
+        const parent = el.closest('div, fieldset, li');
+        if (parent) {
+          const errorEl = parent.querySelector('[role="alert"], .error, .field-error, [class*="error" i]');
+          const text = errorEl?.textContent?.trim();
+          if (text && text.length > 2 && !seen.has(text)) {
+            errors.push(text);
+            seen.add(text);
+          }
+        }
+        // Check native validation
+        if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) {
+          if (el.validationMessage && !seen.has(el.validationMessage)) {
+            errors.push(el.validationMessage);
+            seen.add(el.validationMessage);
+          }
+        }
+      }
+      resolve(errors);
+    };
+
+    const observer = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        // Attribute changes (aria-invalid being set to "true")
+        if (mutation.type === 'attributes' && mutation.attributeName === 'aria-invalid') {
+          const target = mutation.target as Element;
+          if (target.getAttribute('aria-invalid') === 'true') {
+            const label = getLabelForInput(target);
+            const errId = target.getAttribute('aria-errormessage') || target.getAttribute('aria-describedby');
+            let errText = '';
+            if (errId) {
+              errText = document.getElementById(errId)?.textContent?.trim() || '';
+            }
+            const msg = errText || `${label || 'Field'}: validation error`;
+            if (!seen.has(msg)) {
+              errors.push(msg);
+              seen.add(msg);
+            }
+          }
+        }
+
+        // New nodes (error elements being inserted)
+        if (mutation.type === 'childList') {
+          for (const node of mutation.addedNodes) {
+            if (!(node instanceof HTMLElement)) continue;
+            const isError = node.matches('[role="alert"], .error, .field-error, [class*="error" i], [data-testid*="error" i]')
+              || node.querySelector('[role="alert"], .error, .field-error');
+            if (isError) {
+              const text = node.textContent?.trim();
+              if (text && text.length > 2 && text.length < 300 && !seen.has(text)) {
+                errors.push(text);
+                seen.add(text);
+              }
+            }
+          }
+        }
+      }
+    });
+
+    // Watch entire document for attribute changes and child additions
+    observer.observe(document.body, {
+      attributes: true,
+      attributeFilter: ['aria-invalid'],
+      childList: true,
+      subtree: true,
+    });
+
+    // Timeout: resolve with whatever errors we've collected
+    setTimeout(finish, timeoutMs);
+  });
 }
 
 // ── Wizard Navigation ──
@@ -1128,8 +1262,9 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
 
           await waitMs(500);
 
-          // Snapshot URL before clicking to detect if page actually changed
+          // Snapshot DOM state before clicking to detect if page changed
           const urlBefore = window.location.href;
+          const domSnapshotBefore = document.body?.innerHTML?.length || 0;
 
           let navResult = clickContinueOrSubmit();
           log(`Navigation result: ${navResult}`);
@@ -1141,29 +1276,47 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
             log(`DOM fallback result: ${navResult}`);
           }
 
-          // Post-click error detection: if we clicked continue/submit,
-          // wait and check if the page stayed (form errors blocking navigation)
+          // Post-click error detection using MutationObserver
+          // Watches for: aria-invalid changes, error element insertions, role=alert
           if (navResult === 'continued' || navResult === 'submitted') {
-            await waitMs(1500);
-            const urlAfter = window.location.href;
-            const pageChanged = urlAfter !== urlBefore;
+            const errorsDetected = await waitForPostClickErrors(1500);
 
-            if (!pageChanged) {
-              // Page didn't change — look for validation errors
-              const pageErrors = detectPageErrors();
-              if (pageErrors.length > 0) {
-                log(`⚠️ Form errors detected after clicking: ${pageErrors.join(' | ')}`, 'warning');
+            if (errorsDetected.length > 0) {
+              log(`⚠️ Form errors detected after clicking: ${errorsDetected.join(' | ')}`, 'warning');
 
-                // Try to fix: ask AI to analyze the errors + DOM and act
-                const fixResult = await handlePostClickErrors(pageErrors);
-                if (fixResult === 'fixed') {
-                  // Retry navigation after fixing
-                  await waitMs(500);
-                  navResult = clickContinueOrSubmit();
-                  log(`Retry navigation after fix: ${navResult}`);
-                } else {
-                  log('⚠️ Could not fix form errors, sending DOM to AI', 'warning');
+              const fixResult = await handlePostClickErrors(errorsDetected);
+              if (fixResult === 'fixed') {
+                await waitMs(500);
+                navResult = clickContinueOrSubmit();
+                log(`Retry navigation after fix: ${navResult}`);
+
+                // Check again after retry
+                const retryErrors = await waitForPostClickErrors(1000);
+                if (retryErrors.length > 0) {
+                  log('⚠️ Still errors after retry, sending DOM to AI', 'warning');
                   navResult = await askClaudeForDomAction();
+                }
+              } else {
+                log('⚠️ Could not fix form errors, sending DOM to AI', 'warning');
+                navResult = await askClaudeForDomAction();
+              }
+            } else {
+              // No errors detected by observer — also check if page didn't change at all
+              const urlAfter = window.location.href;
+              const domSnapshotAfter = document.body?.innerHTML?.length || 0;
+              const pageChanged = urlAfter !== urlBefore || Math.abs(domSnapshotAfter - domSnapshotBefore) > 200;
+
+              if (!pageChanged) {
+                // Page really didn't change — do a final scan
+                const pageErrors = detectPageErrors();
+                if (pageErrors.length > 0) {
+                  log(`⚠️ Form errors found in final scan: ${pageErrors.join(' | ')}`, 'warning');
+                  const fixResult = await handlePostClickErrors(pageErrors);
+                  if (fixResult === 'fixed') {
+                    await waitMs(500);
+                    navResult = clickContinueOrSubmit();
+                    log(`Retry navigation after final fix: ${navResult}`);
+                  }
                 }
               }
             }

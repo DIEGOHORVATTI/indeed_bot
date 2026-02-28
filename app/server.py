@@ -38,6 +38,7 @@ class InputConstraints(BaseModel):
     min: str | None = None
     max: str | None = None
     pattern: str | None = None
+    placeholder: str | None = None
 
 
 class AnswerRequest(BaseModel):
@@ -125,6 +126,8 @@ async def answer_question(req: AnswerRequest):
             constraint_lines.append(f"- Max value: {c.max}")
         if c.pattern:
             constraint_lines.append(f"- Pattern (regex): {c.pattern}")
+        if c.placeholder:
+            constraint_lines.append(f"- Expected format/placeholder: {c.placeholder}")
         prompt_parts.append("\n" + "\n".join(constraint_lines))
 
     if req.errorContext:

@@ -255,6 +255,7 @@ export interface InputConstraints {
   max?: string;
   pattern?: string;
   step?: string;
+  placeholder?: string;
   required: boolean;
 }
 
@@ -264,6 +265,10 @@ export function getInputConstraints(el: HTMLInputElement | HTMLTextAreaElement):
     type: (el as HTMLInputElement).type || 'text',
     required: el.required || el.getAttribute('aria-required') === 'true',
   };
+
+  // Extract placeholder (useful for format hints like DD/MM/YYYY)
+  const placeholder = el.getAttribute('placeholder')?.trim();
+  if (placeholder) constraints.placeholder = placeholder;
 
   if (el instanceof HTMLInputElement) {
     if (el.maxLength > 0 && el.maxLength < 524288) constraints.maxLength = el.maxLength;
@@ -305,7 +310,22 @@ export function validateAnswer(
     }
   }
 
-  if (constraints.type === 'date') {
+  // Date validation: check format matches placeholder (e.g., DD/MM/YYYY)
+  if (constraints.type === 'date' || constraints.placeholder?.match(/[DMY]{2,4}/i)) {
+    const ph = constraints.placeholder || '';
+    if (ph.includes('DD/MM/YYYY') || ph.includes('dd/mm/yyyy')) {
+      if (!/^\d{2}\/\d{2}\/\d{4}$/.test(answer)) {
+        return { valid: false, error: `Date must be in DD/MM/YYYY format, got "${answer}"` };
+      }
+    } else if (ph.includes('MM/DD/YYYY') || ph.includes('mm/dd/yyyy')) {
+      if (!/^\d{2}\/\d{2}\/\d{4}$/.test(answer)) {
+        return { valid: false, error: `Date must be in MM/DD/YYYY format, got "${answer}"` };
+      }
+    } else if (ph.includes('YYYY-MM-DD') || ph.includes('yyyy-mm-dd')) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(answer)) {
+        return { valid: false, error: `Date must be in YYYY-MM-DD format, got "${answer}"` };
+      }
+    }
     if (constraints.min && answer < constraints.min) {
       return { valid: false, error: `Date must be >= ${constraints.min}` };
     }
