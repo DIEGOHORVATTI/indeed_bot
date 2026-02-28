@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Indeed Auto Apply",
-  "version": "0.2.6",
+  "version": "0.2.8",
   "description": "Auto-apply to Indeed jobs with AI-tailored CV and smart form filling",
   "permissions": [
     "tabs",
@@ -26,14 +26,18 @@
       "exclude_matches": [
         "*://smartapply.indeed.com/*"
       ],
-      "js": ["content/indeed.js"],
+      "js": [
+        "content/indeed.js"
+      ],
       "run_at": "document_idle"
     },
     {
       "matches": [
         "*://smartapply.indeed.com/*"
       ],
-      "js": ["content/mainworld.js"],
+      "js": [
+        "content/mainworld.js"
+      ],
       "run_at": "document_start",
       "all_frames": true,
       "world": "MAIN"
@@ -42,7 +46,9 @@
       "matches": [
         "*://smartapply.indeed.com/*"
       ],
-      "js": ["content/smartapply.js"],
+      "js": [
+        "content/smartapply.js"
+      ],
       "run_at": "document_idle",
       "all_frames": true
     }

@@ -36,6 +36,7 @@ export interface Settings {
   language: string; // us, uk, br, fr, de, es
   searchUrls: string[];
   maxApplies: number; // 0 = unlimited
+  availableToday: boolean; // When true, date fields asking "when can you start" → today's date
   personalization: {
     enabled: boolean;
     baseCv: string; // markdown content
@@ -50,6 +51,7 @@ export const DEFAULT_SETTINGS: Settings = {
   language: 'br',
   searchUrls: [],
   maxApplies: 0,
+  availableToday: true,
   personalization: {
     enabled: true,
     baseCv: '',

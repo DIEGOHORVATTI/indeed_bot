@@ -39,6 +39,17 @@ function waitMs(ms: number): Promise<void> {
   return new Promise(r => setTimeout(r, ms));
 }
 
+/** Format today's date in the given format (DD/MM/YYYY, MM/DD/YYYY, YYYY-MM-DD). */
+function getTodayFormatted(format: string): string {
+  const now = new Date();
+  const dd = String(now.getDate()).padStart(2, '0');
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const yyyy = String(now.getFullYear());
+  if (format.includes('YYYY-MM-DD')) return `${yyyy}-${mm}-${dd}`;
+  if (format.includes('MM/DD/YYYY')) return `${mm}/${dd}/${yyyy}`;
+  return `${dd}/${mm}/${yyyy}`; // DD/MM/YYYY default
+}
+
 // ── Ask Claude (via service worker → backend) ──
 
 async function askClaude(
@@ -670,10 +681,22 @@ async function handleQuestionnaire(): Promise<{ needsUserInput: boolean; fieldLa
 
   for (const inp of textInputs) {
     if (!isVisible(inp)) continue;
-    if (inp.value.trim()) continue;
+
+    // Process if: empty, OR has value but marked invalid (e.g. "Immediately" in a date field)
+    const hasInvalidValue = inp.getAttribute('aria-invalid') === 'true' && inp.value.trim();
+    if (inp.value.trim() && !hasInvalidValue) continue;
 
     const label = getLabelForInput(inp);
     if (!label) continue;
+
+    // If field has an invalid value, clear it first and set initial error context
+    let initialErrorContext: string | undefined;
+    if (hasInvalidValue) {
+      const currentError = detectValidationError(inp);
+      initialErrorContext = `Field currently has invalid value "${inp.value}". Error: "${currentError || 'validation failed'}". Provide a valid answer.`;
+      fillInput(inp, ''); // Clear the invalid value
+      log(`🧹 Cleared invalid value "${inp.value}" from "${label}"`);
+    }
 
     const constraints = getInputConstraints(inp);
     log(`📝 Field: "${label}" [type=${constraints.type}, required=${constraints.required}${constraints.placeholder ? `, placeholder=${constraints.placeholder}` : ''}${constraints.maxLength ? `, maxLen=${constraints.maxLength}` : ''}${constraints.min ? `, min=${constraints.min}` : ''}${constraints.max ? `, max=${constraints.max}` : ''}${constraints.pattern ? `, pattern=${constraints.pattern}` : ''}]`);
@@ -722,8 +745,24 @@ async function handleQuestionnaire(): Promise<{ needsUserInput: boolean; fieldLa
       constraints.type = 'date';
     }
 
+    // If date field + "available today" setting → fill with today, skip AI entirely
+    if (isDateField) {
+      const settings = await new Promise<any>(resolve => {
+        chrome.runtime.sendMessage({ type: 'GET_STATE' }, (resp) => resolve(resp?.payload));
+      }).catch(() => null);
+      // Check availableToday setting (stored in chrome.storage)
+      const storageData = await chrome.storage.local.get('settings');
+      const availableToday = storageData?.settings?.availableToday !== false; // default true
+      if (availableToday) {
+        const todayDate = getTodayFormatted(constraints.placeholder || 'DD/MM/YYYY');
+        log(`📅 "Available today" enabled — filling "${label}" with today: ${todayDate}`);
+        fillInput(inp, todayDate);
+        continue; // skip to next input
+      }
+    }
+
     let filled = false;
-    let errorContext: string | undefined;
+    let errorContext: string | undefined = initialErrorContext;
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       const answer = await askClaude(enrichedLabel, undefined, constraints, errorContext);
@@ -741,7 +780,15 @@ async function handleQuestionnaire(): Promise<{ needsUserInput: boolean; fieldLa
           errorContext = `Previous answer "${answer}" was rejected: ${validation.error}. Generate a valid answer.`;
           continue;
         }
-        // Last attempt: truncate if maxLength issue, or use as-is
+        // Last attempt fallbacks
+        if (isDateField) {
+          // Use today's date (or settings availableStartDate) as fallback
+          const fallbackDate = getTodayFormatted(constraints.placeholder || 'DD/MM/YYYY');
+          log(`📅 Date fallback: using "${fallbackDate}" for "${label}"`);
+          fillInput(inp, fallbackDate);
+          filled = true;
+          break;
+        }
         if (constraints.maxLength && answer.length > constraints.maxLength) {
           fillInput(inp, answer.substring(0, constraints.maxLength));
           filled = true;
@@ -996,6 +1043,19 @@ async function handlePostClickErrors(pageErrors: string[]): Promise<'fixed' | 'f
     const errorContext = `After submitting the form, field "${enrichedLabel}" has error: "${domError}". Current value: "${currentValue}". Page errors: ${pageErrors.join('; ')}. Fix the answer.`;
 
     log(`🔧 Fixing field "${label}" — error: "${domError}", current: "${currentValue}", isDate: ${isDateField}`);
+
+    // For date fields: use today's date directly (AI keeps getting this wrong)
+    if (isDateField) {
+      const storageData = await chrome.storage.local.get('settings');
+      const availableToday = storageData?.settings?.availableToday !== false;
+      const dateFormat = constraints.placeholder || 'DD/MM/YYYY';
+      const dateValue = getTodayFormatted(dateFormat);
+      log(`📅 Date field fix: using ${availableToday ? 'today' : 'today (fallback)'}: "${dateValue}"`);
+      fillInput(inp, dateValue);
+      anyFixed = true;
+      await waitMs(300);
+      continue;
+    }
 
     const answer = await askClaude(enrichedLabel, undefined, constraints, errorContext);
     if (answer) {

@@ -11,6 +11,7 @@ const fields = {
   searchUrls: $('search-urls') as unknown as HTMLTextAreaElement,
   language: $('language') as unknown as HTMLSelectElement,
   maxApplies: $('max-applies'),
+  availableToday: $('available-today'),
   personalizationEnabled: $('personalization-enabled'),
   baseCv: $('base-cv') as unknown as HTMLTextAreaElement,
   baseCover: $('base-cover') as unknown as HTMLTextAreaElement,
@@ -34,6 +35,7 @@ async function loadSettings(): Promise<void> {
   fields.searchUrls.value = s.searchUrls.join('\n');
   fields.language.value = s.language;
   fields.maxApplies.value = String(s.maxApplies);
+  fields.availableToday.checked = s.availableToday !== false; // default true
   fields.personalizationEnabled.checked = s.personalization.enabled;
   fields.baseCv.value = s.personalization.baseCv;
   fields.baseCover.value = s.personalization.baseCoverLetter;
@@ -60,6 +62,7 @@ async function saveSettings(): Promise<void> {
     searchUrls: fields.searchUrls.value.split('\n').map(u => u.trim()).filter(Boolean),
     language: fields.language.value,
     maxApplies: parseInt(fields.maxApplies.value) || 0,
+    availableToday: fields.availableToday.checked,
     personalization: {
       enabled: fields.personalizationEnabled.checked,
       baseCv: fields.baseCv.value,

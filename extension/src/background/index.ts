@@ -83,11 +83,13 @@ async function handleMessage(
 
       // Full lookup: cache first, then Claude
       if (question) {
-        // Check cache
-        const cached = await cache.lookup(question, 'text', options);
-        if (cached) {
-          sendResponse({ payload: { answer: cached } });
-          return;
+        // Skip cache when retrying with error context (previous cached answer was wrong)
+        if (!errorContext) {
+          const cached = await cache.lookup(question, 'text', options);
+          if (cached) {
+            sendResponse({ payload: { answer: cached } });
+            return;
+          }
         }
 
         // Ask Claude
