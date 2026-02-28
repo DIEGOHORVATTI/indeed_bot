@@ -142,10 +142,41 @@ def fill_cover_template(data: dict, profile: dict | None = None) -> str:
     return html
 
 
+def _run_pdf_in_subprocess(html_path: str, output_path: str) -> None:
+    """Run Playwright PDF generation in a subprocess to avoid async loop conflicts."""
+    import subprocess
+    import sys
+
+    script = f"""
+import sys
+from playwright.sync_api import sync_playwright
+with sync_playwright() as p:
+    browser = p.chromium.launch()
+    page = browser.new_page()
+    page.goto("file://{html_path}", wait_until="networkidle")
+    page.pdf(
+        path="{output_path}",
+        format="A4",
+        print_background=True,
+        margin={{"top": "0", "right": "0", "bottom": "0", "left": "0"}},
+    )
+    browser.close()
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True, text=True, timeout=60,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"PDF subprocess failed: {result.stderr[:500]}")
+
+
 def html_to_pdf(html_content: str, output_path: str) -> str:
-    """Convert HTML string to PDF using Playwright (Chromium)."""
+    """Convert HTML string to PDF using Playwright in a subprocess.
+
+    Uses a subprocess to avoid 'Playwright Sync API inside asyncio loop' errors
+    when Camoufox (which uses an internal event loop) is active.
+    """
     import tempfile
-    from playwright.sync_api import sync_playwright
 
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
 
@@ -154,17 +185,7 @@ def html_to_pdf(html_content: str, output_path: str) -> str:
         tmp_path = tmp.name
 
     try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch()
-            page = browser.new_page()
-            page.goto(f"file://{tmp_path}", wait_until="networkidle")
-            page.pdf(
-                path=output_path,
-                format="A4",
-                print_background=True,
-                margin={"top": "0", "right": "0", "bottom": "0", "left": "0"},
-            )
-            browser.close()
+        _run_pdf_in_subprocess(tmp_path, output_path)
     finally:
         os.unlink(tmp_path)
 

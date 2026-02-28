@@ -10,7 +10,7 @@
 
 ## Professional Summary
 
-Software Engineer with 3+ years of experience in TypeScript, React.js, Next.js, and Node.js. Specialized in high-performance front-end (Web Components, video players at scale), omnichannel platforms, and microservices with Express/tRPC. Hands-on with AWS, Docker, CI/CD pipelines, and automated testing (Jest, Cypress, E2E). Proven results in core refactoring, large-scale form systems, and KPI-driven dashboards.
+Software Engineer with 5+ years of experience in TypeScript, React.js, Next.js, and Node.js. Specialized in high-performance front-end (Web Components, video players at scale), omnichannel platforms, and microservices with Express/tRPC. Hands-on with AWS, Docker, CI/CD pipelines, and automated testing (Jest, Cypress, E2E). Proven results in core refactoring, large-scale form systems, and KPI-driven dashboards.
 
 ## Skills
 

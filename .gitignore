@@ -210,4 +210,6 @@ __marimo__/
 logs.txt
 user_data_dir/
 output/
+applied_jobs.json
+job_registry.json
 .DS_Store

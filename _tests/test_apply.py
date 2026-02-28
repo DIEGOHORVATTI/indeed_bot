@@ -11,6 +11,7 @@ class LoggerStub:
         self.infos = []
         self.warnings = []
         self.errors = []
+        self.debugs = []
 
     def info(self, msg):
         self.infos.append(msg)
@@ -21,6 +22,9 @@ class LoggerStub:
     def error(self, msg):
         self.errors.append(msg)
 
+    def debug(self, msg):
+        self.debugs.append(msg)
+
 
 class ApplyFlowPage:
     """Finite-state fake page to drive apply_to_job() happy path."""
@@ -29,7 +33,6 @@ class ApplyFlowPage:
         self._state = "start"
         self._url = "https://job.example/apply"
 
-    # Minimal API used by apply_to_job
     @property
     def url(self):
         return self._url
@@ -37,39 +40,69 @@ class ApplyFlowPage:
     def goto(self, url: str):
         self._url = url
 
-    def wait_for_load_state(self, _state: str):
+    def wait_for_load_state(self, _state: str, timeout: int = None):
+        return None
+
+    def wait_for_selector(self, sel: str, timeout: int = None, state: str = None):
+        # Simulate wizard elements being present
+        if self._state in ("resume", "submit"):
+            return _Clickable(lambda: None)
         return None
 
     def query_selector(self, sel: str):
         # Apply button step
         if self._state == "start":
-            if sel in (
+            apply_selectors = (
                 'button:has(span[class*="css-1ebo7dz"])',
+                'button[id*="indeedApplyButton"]',
+                '[data-testid="indeedApplyButton"]',
+                'button:visible:has-text("Candidatar")',
+                'button:visible:has-text("Candidatura simplificada")',
                 'button:visible:has-text("Postuler")',
+                'button:visible:has-text("Apply now")',
                 'button:visible:has-text("Apply")',
-            ):
+            )
+            if sel in apply_selectors:
                 return _Clickable(lambda: self._advance("resume"))
             return None
-        # Resume step: expose resume card
+        # Resume step
         if self._state == "resume":
-            if sel == '[data-testid="FileResumeCardHeader-title"]':
+            resume_selectors = (
+                '[data-testid="FileResumeCardHeader-title"]',
+                '[data-testid="fileResumeCard"]',
+                '[data-testid="ResumeCard"]',
+                'div[class*="ResumeCard"]',
+                'div[class*="resume-card"]',
+                '[data-testid="resume-display-text"]',
+            )
+            if sel in resume_selectors:
                 return _Clickable(lambda: None)
             return None
         return None
 
     def query_selector_all(self, sel: str):
+        # No iframes
+        if sel == 'iframe':
+            return []
+        # Wizard interactive elements
+        if sel == 'button, input, select, textarea':
+            if self._state in ("resume", "submit"):
+                return [_TextButton("Continue", lambda: None)]
+            return []
         # Resume step: show continue button
         if self._state == "resume" and sel == 'button:visible':
             return [_TextButton("Continue", lambda: self._advance("submit"))]
-        # Submit step: show submit button last
+        # Submit step: show submit button
         if self._state == "submit" and sel == 'button:visible':
             return [_TextButton("Submit", lambda: self._advance("done"))]
+        # Questionnaire selectors - return empty
+        if 'input[type=' in sel or 'textarea' in sel or 'select:' in sel or 'radio' in sel:
+            return []
         return []
 
     def close(self):
         return None
 
-    # helpers
     def _advance(self, next_state: str):
         self._state = next_state
         if next_state == "done":
@@ -86,6 +119,12 @@ class _Clickable:
     def evaluate_handle(self, _):
         return self
 
+    def get_attribute(self, name: str):
+        return None
+
+    def inner_text(self):
+        return ""
+
 
 class _TextButton(_Clickable):
     def __init__(self, text: str, on_click):
@@ -94,9 +133,6 @@ class _TextButton(_Clickable):
 
     def inner_text(self):
         return self._text
-
-    def get_attribute(self, name: str):
-        return None
 
     def is_visible(self):
         return True
@@ -107,13 +143,11 @@ class FakeBrowser:
         self._page = ApplyFlowPage()
 
     def new_page(self):
-        # return a fresh page per call
         self._page = ApplyFlowPage()
         return self._page
 
 
 def test_apply_to_job_happy_path(monkeypatch):
-    # Avoid real sleeps
     monkeypatch.setattr("app.utils.indeed.time.sleep", lambda s: None)
     browser = FakeBrowser()
     logger = LoggerStub()
@@ -125,6 +159,11 @@ def test_apply_to_job_happy_path(monkeypatch):
 class NoApplyButtonPage(ApplyFlowPage):
     def query_selector(self, sel: str):
         return None
+
+    def query_selector_all(self, sel: str):
+        if sel == 'iframe':
+            return []
+        return []
 
 
 class FailBrowser:

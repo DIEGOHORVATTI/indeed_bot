@@ -93,7 +93,10 @@ class FakePage:
     def goto(self, url: str):
         self.url = url
 
-    def wait_for_load_state(self, _state: str):
+    def wait_for_load_state(self, _state: str, timeout: int = None):
+        return None
+
+    def wait_for_selector(self, sel: str, timeout: int = None, state: str = None):
         return None
 
 
