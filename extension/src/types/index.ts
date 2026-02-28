@@ -194,8 +194,13 @@ export interface BotStatus {
   state: BotState;
   appliedCount: number;
   skippedCount: number;
+  failedCount: number;
+  pendingJobs: number;
   totalJobs: number;
   currentJob?: string;
+  currentSearchUrl?: string;
+  currentSearchIndex?: number;
+  totalSearchUrls?: number;
   log: LogEntry[];
 }
 

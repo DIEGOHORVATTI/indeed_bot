@@ -7,7 +7,7 @@ import { BotState, BotStatus, JobEntry, LogEntry, Message, Settings } from '../t
 import { JobRegistry } from '../services/job-registry';
 import { AnswerCache } from '../services/answer-cache';
 import { askClaudeForAnswer, generateTailoredContent, generatePdfFromHtml } from '../services/claude';
-import { fillCvTemplate, fillCoverTemplate, loadTemplates } from '../services/pdf';
+import { fillCvTemplate, fillCoverTemplate, fillCvWithCoverTemplate, loadTemplates } from '../services/pdf';
 import { createTabGroup, addTabToGroup, closeTab, navigateTab, waitForTabLoad } from './tab-group';
 import { notifyUserInput } from '../utils/notifications';
 
@@ -17,12 +17,16 @@ const cache = new AnswerCache();
 let state: BotState = 'idle';
 let appliedCount = 0;
 let skippedCount = 0;
+let failedCount = 0;
 let jobs: JobEntry[] = [];
 let currentJobIndex = 0;
 let log: LogEntry[] = [];
 let botTabId: number | null = null;
 let settings: Settings | null = null;
 let stopRequested = false;
+let currentSearchUrl = '';
+let currentSearchIndex = 0;
+let totalSearchUrls = 0;
 
 // ── Logging ──
 
@@ -38,12 +42,18 @@ function broadcastStatus(): void {
 }
 
 export function getStatus(): BotStatus {
+  const pending = jobs.filter(j => j.status === 'pending').length;
   return {
     state,
     appliedCount,
     skippedCount,
+    failedCount,
+    pendingJobs: pending,
     totalJobs: jobs.length,
     currentJob: jobs[currentJobIndex]?.title || jobs[currentJobIndex]?.url,
+    currentSearchUrl,
+    currentSearchIndex,
+    totalSearchUrls,
     log: log.slice(-50),
   };
 }
@@ -75,10 +85,14 @@ export async function startBot(userSettings: Settings): Promise<void> {
   state = 'collecting';
   appliedCount = 0;
   skippedCount = 0;
+  failedCount = 0;
   jobs = [];
   currentJobIndex = 0;
   log = [];
   stopRequested = false;
+  currentSearchUrl = '';
+  currentSearchIndex = 0;
+  totalSearchUrls = settings.searchUrls.length;
 
   await registry.load();
   await cache.load();
@@ -126,17 +140,25 @@ export function resumeBot(): void {
 async function collectAndApply(): Promise<void> {
   if (!settings) return;
 
-  for (const searchUrl of settings.searchUrls) {
+  totalSearchUrls = settings.searchUrls.length;
+
+  for (let searchIdx = 0; searchIdx < settings.searchUrls.length; searchIdx++) {
     if (stopRequested) break;
     if (settings.maxApplies > 0 && appliedCount >= settings.maxApplies) {
       addLog('info', `Reached max applies limit (${settings.maxApplies})`);
       break;
     }
 
-    addLog('info', `Collecting from: ${searchUrl}`);
+    const searchUrl = settings.searchUrls[searchIdx];
+    currentSearchUrl = searchUrl;
+    currentSearchIndex = searchIdx;
 
-    // Paginate through ALL pages of this search URL
-    let pageUrl = searchUrl;
+    addLog('info', `[Link ${searchIdx + 1}/${totalSearchUrls}] Collecting from: ${searchUrl}`);
+
+    // ── Phase 1: Collect ALL pages for this search URL ──
+    state = 'collecting';
+    const batchStartIndex = jobs.length;
+    let pageUrl: string | null = searchUrl;
     let pageNum = 1;
 
     while (pageUrl && !stopRequested) {
@@ -151,15 +173,13 @@ async function collectAndApply(): Promise<void> {
       await waitForTabLoad(botTabId, 15000);
       await delay(2000);
 
-      // Collect links from this page
-      state = 'collecting';
       broadcastStatus();
 
       const response = await sendToTab(botTabId, { type: 'COLLECT_LINKS' });
       const links: { url: string; jobKey: string }[] = response?.payload || [];
 
       if (links.length === 0) {
-        addLog('info', `No more jobs on page ${pageNum}, moving to next search URL`);
+        addLog('info', `No more jobs on page ${pageNum}`);
         break;
       }
 
@@ -170,83 +190,86 @@ async function collectAndApply(): Promise<void> {
         newLinks.push(link);
       }
 
-      const skipped = links.length - newLinks.length;
-      addLog('info', `Page ${pageNum}: found ${newLinks.length} new jobs${skipped ? ` (${skipped} already processed)` : ''}`);
-
-      // Add to job list
-      const batchStartIndex = jobs.length;
       for (const link of newLinks) {
-        jobs.push({
-          url: link.url,
-          jobKey: link.jobKey,
-          status: 'pending',
-        });
+        jobs.push({ url: link.url, jobKey: link.jobKey, status: 'pending' });
       }
 
-      // Apply to jobs collected from this page
-      state = 'applying';
+      const skipped = links.length - newLinks.length;
+      const totalNew = jobs.length - batchStartIndex;
+      addLog('info', `Page ${pageNum}: +${newLinks.length} new${skipped ? ` (${skipped} known)` : ''} — ${totalNew} total collected`);
       broadcastStatus();
 
-      for (let i = batchStartIndex; i < jobs.length; i++) {
-        if (stopRequested) break;
-        if ((state as BotState) === 'paused') {
-          while ((state as BotState) === 'paused' && !stopRequested) {
-            await delay(1000);
-          }
-        }
-        if (stopRequested) break;
-
-        if (settings!.maxApplies > 0 && appliedCount >= settings!.maxApplies) {
-          addLog('info', `Reached max applies limit (${settings!.maxApplies})`);
-          return;
-        }
-
-        currentJobIndex = i;
-        const job = jobs[i];
-
-        if (await registry.isKnown(job.jobKey)) {
-          job.status = 'skipped';
-          job.skipReason = 'already_processed';
-          skippedCount++;
-          continue;
-        }
-
-        addLog('info', `[${appliedCount + 1}${settings!.maxApplies ? '/' + settings!.maxApplies : ''}] Applying: ${job.url}`);
-
-        const result = await applyToJob(job);
-
-        if (result === true) {
-          job.status = 'applied';
-          appliedCount++;
-          await registry.markApplied(job.jobKey);
-          addLog('info', `Applied successfully to ${job.title || job.url}`);
-        } else if (typeof result === 'string') {
-          job.status = 'skipped';
-          job.skipReason = result;
-          skippedCount++;
-          await registry.markSkipped(job.jobKey, result);
-          addLog('warning', `Skipped: ${result}`);
-        } else {
-          job.status = 'failed';
-          addLog('error', `Failed to apply to ${job.url}`);
-        }
-
-        broadcastStatus();
-        await randomDelay(3000, 7000);
-      }
-
       // Check for next page
-      const nextPageUrl = await sendToTab(botTabId, { type: 'GET_NEXT_PAGE' });
-      const nextUrl: string | null = nextPageUrl?.payload || null;
+      const nextPageResp = await sendToTab(botTabId, { type: 'GET_NEXT_PAGE' });
+      pageUrl = nextPageResp?.payload || null;
 
-      if (!nextUrl) {
-        addLog('info', `No more pages for this search URL (page ${pageNum})`);
+      if (!pageUrl) {
+        addLog('info', `Collection done: ${totalNew} jobs from ${pageNum} page(s)`);
         break;
       }
 
-      pageUrl = nextUrl;
       pageNum++;
       await randomDelay(2000, 4000);
+    }
+
+    // ── Phase 2: Apply one by one to all collected jobs ──
+    const batchEnd = jobs.length;
+    if (batchEnd === batchStartIndex) {
+      addLog('info', 'No new jobs to apply, moving to next search URL');
+      await randomDelay(2000, 4000);
+      continue;
+    }
+
+    state = 'applying';
+    broadcastStatus();
+
+    for (let i = batchStartIndex; i < batchEnd; i++) {
+      if (stopRequested) break;
+      if ((state as BotState) === 'paused') {
+        while ((state as BotState) === 'paused' && !stopRequested) {
+          await delay(1000);
+        }
+      }
+      if (stopRequested) break;
+
+      if (settings!.maxApplies > 0 && appliedCount >= settings!.maxApplies) {
+        addLog('info', `Reached max applies limit (${settings!.maxApplies})`);
+        return;
+      }
+
+      currentJobIndex = i;
+      const job = jobs[i];
+
+      if (await registry.isKnown(job.jobKey)) {
+        job.status = 'skipped';
+        job.skipReason = 'already_processed';
+        skippedCount++;
+        continue;
+      }
+
+      addLog('info', `[${appliedCount + 1}${settings!.maxApplies ? '/' + settings!.maxApplies : ''}] Applying: ${job.url}`);
+
+      const result = await applyToJob(job);
+
+      if (result === true) {
+        job.status = 'applied';
+        appliedCount++;
+        await registry.markApplied(job.jobKey);
+        addLog('info', `Applied successfully to ${job.title || job.url}`);
+      } else if (typeof result === 'string') {
+        job.status = 'skipped';
+        job.skipReason = result;
+        skippedCount++;
+        await registry.markSkipped(job.jobKey, result);
+        addLog('warning', `Skipped: ${result}`);
+      } else {
+        job.status = 'failed';
+        failedCount++;
+        addLog('error', `Failed to apply to ${job.url}`);
+      }
+
+      broadcastStatus();
+      await randomDelay(3000, 7000);
     }
 
     await randomDelay(2000, 4000);
@@ -276,7 +299,8 @@ async function applyToJob(job: JobEntry): Promise<true | string | false> {
   job.company = jobInfo.company;
 
   // Generate tailored CV if enabled
-  let cvPdfData: ArrayBuffer | undefined;
+  let cvPdfData: ArrayBuffer | undefined;       // CV + cover embedded (fallback)
+  let cvOnlyPdfData: ArrayBuffer | undefined;   // CV without cover
   let cvFilename: string | undefined;
   let coverPdfData: ArrayBuffer | undefined;
   let coverFilename: string | undefined;
@@ -298,13 +322,19 @@ async function applyToJob(job: JobEntry): Promise<true | string | false> {
         .replace(/[^a-zA-Z0-9_\-]/g, '')
         .substring(0, 60);
 
-      // Generate CV PDF (saved to output/ on backend)
-      const cvHtml = fillCvTemplate(tailored, settings.profile);
       cvFilename = `CV_${safeTitle}.pdf`;
-      cvPdfData = await generatePdfFromHtml(cvHtml, settings.backendUrl, cvFilename);
-      addLog('info', `CV PDF generated: ${cvFilename} (${(cvPdfData.byteLength / 1024).toFixed(0)}KB)`);
 
-      // Generate cover letter PDF (saved to output/ on backend)
+      // Generate CV-only PDF (for when cover letter has its own field)
+      const cvOnlyHtml = fillCvTemplate(tailored, settings.profile);
+      cvOnlyPdfData = await generatePdfFromHtml(cvOnlyHtml, settings.backendUrl, cvFilename);
+      addLog('info', `CV-only PDF generated: ${cvFilename} (${(cvOnlyPdfData.byteLength / 1024).toFixed(0)}KB)`);
+
+      // Generate CV + cover letter embedded PDF (for when no cover letter field exists)
+      const cvWithCoverHtml = fillCvWithCoverTemplate(tailored, settings.profile);
+      cvPdfData = await generatePdfFromHtml(cvWithCoverHtml, settings.backendUrl, `CV_Cover_${safeTitle}.pdf`);
+      addLog('info', `CV+Cover PDF generated (${(cvPdfData.byteLength / 1024).toFixed(0)}KB)`);
+
+      // Generate standalone cover letter PDF (for the dedicated cover letter field)
       const coverHtml = fillCoverTemplate(tailored, settings.profile);
       coverFilename = `Cover_${safeTitle}.pdf`;
       coverPdfData = await generatePdfFromHtml(coverHtml, settings.backendUrl, coverFilename);
@@ -366,6 +396,7 @@ async function applyToJob(job: JobEntry): Promise<true | string | false> {
       type: 'FILL_AND_ADVANCE',
       payload: {
         cvData: cvPdfData ? Array.from(new Uint8Array(cvPdfData)) : undefined,
+        cvOnlyData: cvOnlyPdfData ? Array.from(new Uint8Array(cvOnlyPdfData)) : undefined,
         cvFilename,
         coverData: coverPdfData ? Array.from(new Uint8Array(coverPdfData)) : undefined,
         coverFilename,
@@ -407,6 +438,7 @@ async function applyToJob(job: JobEntry): Promise<true | string | false> {
           type: 'FILL_AND_ADVANCE',
           payload: {
             cvData: cvPdfData ? Array.from(new Uint8Array(cvPdfData)) : undefined,
+            cvOnlyData: cvOnlyPdfData ? Array.from(new Uint8Array(cvOnlyPdfData)) : undefined,
             cvFilename,
             coverData: coverPdfData ? Array.from(new Uint8Array(coverPdfData)) : undefined,
             coverFilename,

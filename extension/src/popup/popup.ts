@@ -14,7 +14,12 @@ const btnOptions = $('btn-options') as HTMLAnchorElement;
 const statusBadge = $('status-badge');
 const appliedCount = $('applied-count');
 const skippedCount = $('skipped-count');
+const failedCountEl = $('failed-count');
+const pendingCountEl = $('pending-count');
 const totalCount = $('total-count');
+const progressSection = $('progress-section');
+const linkInfo = $('link-info');
+const progressFill = $('progress-fill');
 const currentJob = $('current-job');
 const currentJobText = $('current-job-text');
 const logContainer = $('log');
@@ -56,10 +61,33 @@ function updateUI(status: BotStatus): void {
   // Stats
   appliedCount.textContent = String(status.appliedCount);
   skippedCount.textContent = String(status.skippedCount);
+  failedCountEl.textContent = String(status.failedCount);
+  pendingCountEl.textContent = String(status.pendingJobs);
   totalCount.textContent = String(status.totalJobs);
 
+  // Progress bar & link info
+  const isActive = status.state !== 'idle';
+  if (isActive && status.totalJobs > 0) {
+    progressSection.style.display = 'block';
+    const processed = status.appliedCount + status.skippedCount + status.failedCount;
+    const pct = Math.round((processed / status.totalJobs) * 100);
+    progressFill.style.width = `${pct}%`;
+
+    if (status.totalSearchUrls && status.totalSearchUrls > 1 && status.currentSearchUrl) {
+      const idx = (status.currentSearchIndex ?? 0) + 1;
+      const truncUrl = status.currentSearchUrl.length > 45
+        ? status.currentSearchUrl.substring(0, 45) + '...'
+        : status.currentSearchUrl;
+      linkInfo.innerHTML = `<strong>Link ${idx}/${status.totalSearchUrls}</strong> — ${truncUrl}`;
+    } else {
+      linkInfo.innerHTML = '';
+    }
+  } else {
+    progressSection.style.display = 'none';
+  }
+
   // Current job
-  if (status.currentJob && status.state !== 'idle') {
+  if (status.currentJob && isActive) {
     currentJob.style.display = 'block';
     currentJobText.textContent = status.currentJob;
   } else {

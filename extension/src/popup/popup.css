@@ -69,6 +69,39 @@ body {
   letter-spacing: 0.5px;
 }
 
+.progress-section {
+  padding: 8px 20px;
+  background: #fff;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.link-info {
+  font-size: 11px;
+  color: #6c757d;
+  margin-bottom: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.link-info strong {
+  color: #16213e;
+}
+
+.progress-bar {
+  height: 6px;
+  background: #e9ecef;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: #198754;
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+
 .current-job {
   padding: 8px 20px;
   background: #fff3cd;

@@ -180,11 +180,13 @@ def html_to_pdf(html_content: str, output_path: str) -> str:
 
 
 def _job_file_prefix(job_info: dict) -> str:
-    """Generate a file name prefix from job info."""
-    job_hash = hashlib.md5(job_info.get("url", str(time.time())).encode()).hexdigest()[:8]
-    company = (job_info.get("company", "unknown") or "unknown").replace(" ", "_").replace("/", "_")[:30]
-    title = (job_info.get("title", "job") or "job").replace(" ", "_").replace("/", "_")[:30]
-    return f"{company}_{title}_{job_hash}"
+    """Generate a file name prefix from job title with underscores."""
+    import re
+    title = (job_info.get("title", "job") or "job").strip()
+    # Replace spaces with underscores, remove non-alphanumeric (keep _ and -)
+    safe_title = re.sub(r'\s+', '_', title)
+    safe_title = re.sub(r'[^a-zA-Z0-9_\-]', '', safe_title)[:60]
+    return safe_title
 
 
 def generate_pdfs_for_job(

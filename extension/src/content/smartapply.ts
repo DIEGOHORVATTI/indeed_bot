@@ -1309,12 +1309,15 @@ function hasCoverLetterField(): boolean {
 chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) => {
   switch (message.type) {
     case 'FILL_AND_ADVANCE': {
-      const { cvData, cvFilename, coverData, coverFilename, jobTitle, baseProfile } = message.payload || {};
+      const { cvData, cvOnlyData, cvFilename, coverData, coverFilename, jobTitle, baseProfile } = message.payload || {};
       currentJobTitle = jobTitle || '';
       currentBaseProfile = baseProfile || '';
 
       // Reconstruct ArrayBuffers from number[] (Chrome message passing doesn't support ArrayBuffer)
+      // cvBuffer = CV with cover letter embedded (fallback when no cover field)
+      // cvOnlyBuffer = CV without cover letter (used when cover has its own field)
       const cvBuffer = cvData ? new Uint8Array(cvData).buffer : undefined;
+      const cvOnlyBuffer = cvOnlyData ? new Uint8Array(cvOnlyData).buffer : undefined;
       const coverBuffer = coverData ? new Uint8Array(coverData).buffer : undefined;
 
       (async () => {
@@ -1346,11 +1349,16 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
             !!document.querySelector('[data-testid*="resume-selection"]')
           );
 
-          log(`Page check: isResumePage=${isResumeSelectionPage}, hasResumeUI=${hasResumeUploadUI}, hasCvToUpload=${hasCvToUpload}`);
+          // Decide which CV to upload:
+          // - If cover letter field exists → use CV-only (cover goes separately)
+          // - If no cover letter field → use CV+cover embedded
+          const coverFieldExists = hasCoverLetterField();
+          const resumeBuffer = (coverFieldExists && cvOnlyBuffer) ? cvOnlyBuffer : cvBuffer;
+          log(`Page check: isResumePage=${isResumeSelectionPage}, hasResumeUI=${hasResumeUploadUI}, hasCvToUpload=${hasCvToUpload}, coverFieldExists=${coverFieldExists}, usingCvOnly=${coverFieldExists && !!cvOnlyBuffer}`);
 
           if (isResumeSelectionPage && hasCvToUpload) {
             log('On resume-selection page with CV data, uploading...');
-            const uploadOk = await handleResumeStep(cvBuffer, cvFilename);
+            const uploadOk = await handleResumeStep(resumeBuffer, cvFilename);
             log(`Upload result: ${uploadOk}`);
 
             if (!uploadOk) {
@@ -1359,7 +1367,7 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
             }
           } else if (hasCvToUpload && hasResumeUploadUI) {
             // Not explicitly resume page but has file input — try upload anyway
-            await handleResumeStep(cvBuffer, cvFilename);
+            await handleResumeStep(resumeBuffer, cvFilename);
           }
 
           if (hasCoverLetterField()) {

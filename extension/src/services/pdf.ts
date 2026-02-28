@@ -131,6 +131,54 @@ export function fillCoverTemplate(data: TailoredContent, profile?: ProfileSettin
 }
 
 /**
+ * Generates CV HTML with the cover letter embedded as an extra page.
+ * Used when the job posting has no separate cover letter upload field.
+ */
+export function fillCvWithCoverTemplate(data: TailoredContent, profile?: ProfileSettings): string {
+  const cvHtml = fillCvTemplate(data, profile);
+
+  // Build the cover letter section to inject before </body>
+  const name = profile?.name?.toUpperCase() || '';
+  const contactHtml = profile ? buildContactHtml(profile) : '';
+  const subtitle = data.cover_subtitle || 'Full Stack Developer';
+  const greeting = data.cover_greeting || 'Prezado(a) Recrutador(a),';
+  const closing = data.cover_closing || 'Atenciosamente';
+
+  // Date
+  const now = new Date();
+  const city = profile?.location?.split(',')[0]?.trim() || '';
+  const monthsPt = ['', 'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
+    'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+  const dateStr = city ? `${city}, ${now.getDate()} de ${monthsPt[now.getMonth() + 1]} de ${now.getFullYear()}` : '';
+
+  const parasHtml = (data.cover_paragraphs || []).map(p => `<p>${p}</p>`).join('\n');
+
+  const coverSection = `
+<!-- Cover Letter Page -->
+<div style="page-break-before: always;"></div>
+<div class="banner" style="background:#16213e;padding:36px 44px 28px 44px;color:#fff;position:relative;overflow:hidden;">
+  <h1 style="font-size:28pt;font-weight:800;letter-spacing:2px;margin-bottom:4px;position:relative;z-index:1;">${name}</h1>
+  <div style="font-size:12pt;color:#e94560;font-weight:600;letter-spacing:0.5px;margin-bottom:10px;position:relative;z-index:1;">${subtitle}</div>
+  <div style="font-size:8.5pt;color:rgba(255,255,255,0.75);position:relative;z-index:1;">${contactHtml}</div>
+</div>
+<div style="height:4px;background:#e94560;"></div>
+<div style="padding:28px 44px 40px 44px;">
+  <div style="font-size:9.5pt;color:#888;margin-bottom:20px;font-style:italic;">${dateStr}</div>
+  <div style="font-size:10.5pt;font-weight:600;color:#16213e;margin-bottom:14px;">${greeting}</div>
+  <div class="body-text" style="font-size:10.5pt;text-align:justify;color:#333;line-height:1.65;">
+    ${parasHtml}
+  </div>
+  <div style="margin-top:28px;font-size:10.5pt;color:#333;">
+    ${closing},<br>
+    <div style="font-weight:700;color:#16213e;margin-top:6px;font-size:11pt;">${name}</div>
+  </div>
+</div>`;
+
+  // Inject before </body>
+  return cvHtml.replace('</body>', coverSection + '\n</body>');
+}
+
+/**
  * Note: PDF generation cannot run in a service worker (no DOM access).
  * The filled HTML is passed to the content script which uploads it directly.
  * Indeed's smartapply accepts PDF uploads — the content script handles

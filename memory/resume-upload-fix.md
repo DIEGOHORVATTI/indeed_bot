@@ -1,6 +1,6 @@
 # Resume Upload Fix - SmartApply Indeed
 
-## Status: WORKING (2026-02-28)
+## Status: WORKING (2026-02-28) — includes "replace existing CV" fix
 
 ## Root Cause Found
 The `data-testid` values on Indeed SmartApply changed. The "upload" variant was added:
@@ -93,10 +93,25 @@ midApplyFeedbackButton
 pdfjs-script
 ```
 
+## Bug: "Existing CV skips upload" (fixed 2026-02-28)
+When a CV is already loaded, Indeed shows a different UI state:
+- Testids use pattern WITHOUT "upload-" (e.g. `resume-selection-file-resume-radio-card-*`)
+- File input exists but is **hidden** (`display: none`)
+- `ResumeOptionsMenu` button is visible
+
+**The bug**: `setInputFiles()` sets `input.files` on the hidden DOM input, but React doesn't process it. `verifyUploadAccepted()` checked `input.files` and falsely returned true.
+
+**The fix**:
+1. `tryResumeSelectionUpload()` now checks `hasExistingResume()` first
+2. If existing CV → calls `resetResumeForNewUpload()` which clicks ResumeOptionsMenu → "Carregar um arquivo diferente"
+3. Component resets to "upload" state (testids switch to "upload-" pattern, file input becomes active)
+4. THEN uploads the new file via `setInputFiles()`
+5. `verifyUploadAccepted()` now checks **label text** (source of truth) instead of `input.files`
+
 ## Files Changed
-- `extension/src/content/smartapply.ts` — Updated all `data-testid` selectors to use both old and new patterns
+- `extension/src/content/smartapply.ts` — Rewrote `tryResumeSelectionUpload()` with `hasExistingResume()` + `resetResumeForNewUpload()` flow
 - `extension/src/utils/i18n.ts` — Added new `data-testid` patterns to UPLOAD_BUTTON_SELECTORS and RESUME_CARD_SELECTORS
-- `extension/src/utils/selectors.ts` — Updated `verifyUploadAccepted()` label selectors
+- `extension/src/utils/selectors.ts` — `verifyUploadAccepted()` now checks label text, not `input.files`
 
 ## Testing Steps
 1. Start Chrome with remote debugging: `open -a "Google Chrome" --args --remote-debugging-port=9222 --user-data-dir=/tmp/chrome-debug-profile`
