@@ -267,7 +267,46 @@ export function getInputConstraints(el: HTMLInputElement | HTMLTextAreaElement):
   };
 
   // Extract placeholder (useful for format hints like DD/MM/YYYY)
-  const placeholder = el.getAttribute('placeholder')?.trim();
+  // Check multiple sources: HTML attribute, aria-placeholder, and nearby hint text
+  let placeholder = el.getAttribute('placeholder')?.trim()
+    || el.getAttribute('aria-placeholder')?.trim()
+    || '';
+
+  // If no placeholder, look for format hints in nearby DOM elements
+  if (!placeholder) {
+    const parent = el.closest('div, fieldset, li');
+    if (parent) {
+      // Look for hint/helper text near the input (common in React form libraries)
+      const hintEl = parent.querySelector('[class*="hint" i], [class*="helper" i], [class*="description" i], [id*="hint" i], small');
+      const hintText = hintEl?.textContent?.trim() || '';
+      if (hintText && hintText.match(/[DMY]{2,4}/i)) {
+        placeholder = hintText;
+      }
+    }
+  }
+
+  // Detect date-like input from various signals
+  if (!placeholder) {
+    const ariaLabel = el.getAttribute('aria-label')?.trim() || '';
+    const label = el.getAttribute('id') ? document.querySelector(`label[for="${el.getAttribute('id')}"]`)?.textContent?.trim() || '' : '';
+    const combinedText = `${ariaLabel} ${label}`.toLowerCase();
+    // If label/aria contains date-related keywords and type is text, mark as date
+    if (constraints.type === 'text' && (
+      combinedText.includes('data') || combinedText.includes('date') ||
+      combinedText.includes('quando') || combinedText.includes('when') ||
+      combinedText.includes('início') || combinedText.includes('start') ||
+      combinedText.includes('término') || combinedText.includes('end')
+    )) {
+      // Check if there's a date format hint in the error message or nearby text
+      const parentBlock = el.closest('[data-testid]') || el.closest('div');
+      const allText = parentBlock?.textContent || '';
+      const dateFormatMatch = allText.match(/(DD\/MM\/YYYY|MM\/DD\/YYYY|YYYY-MM-DD)/i);
+      if (dateFormatMatch) {
+        placeholder = dateFormatMatch[1];
+      }
+    }
+  }
+
   if (placeholder) constraints.placeholder = placeholder;
 
   if (el instanceof HTMLInputElement) {
@@ -354,27 +393,45 @@ export function validateAnswer(
 }
 
 /** Detect validation errors on an element after filling it. */
-export function detectValidationError(el: HTMLInputElement | HTMLTextAreaElement): string | null {
+export function detectValidationError(el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement): string | null {
   // Native browser validation
-  if (el.validationMessage) return el.validationMessage;
+  if ('validationMessage' in el && el.validationMessage) return el.validationMessage;
 
   // Check aria-invalid
   if (el.getAttribute('aria-invalid') === 'true') {
-    // Look for associated error message
+    // Look for associated error message via aria-errormessage or aria-describedby
     const errId = el.getAttribute('aria-errormessage') || el.getAttribute('aria-describedby');
     if (errId) {
-      const errEl = document.getElementById(errId);
-      if (errEl?.textContent?.trim()) return errEl.textContent.trim();
+      // aria-describedby can have multiple space-separated IDs
+      for (const id of errId.split(/\s+/)) {
+        const errEl = document.getElementById(id);
+        const text = errEl?.textContent?.trim();
+        if (text && text.length > 2) return text;
+      }
     }
+
+    // Fallback: look for error text in parent containers (up to 3 levels)
+    let parent: Element | null = el;
+    for (let i = 0; i < 3 && parent; i++) {
+      parent = parent.parentElement;
+      if (!parent) break;
+      const errorEl = parent.querySelector('[role="alert"], .error, .field-error, .input-error, [class*="error" i], [data-testid*="error" i]');
+      if (errorEl) {
+        const text = errorEl.textContent?.trim();
+        if (text && text.length > 2) return text;
+      }
+    }
+
+    return 'Field has validation error (aria-invalid)';
   }
 
-  // Look for nearby error elements
+  // Look for nearby error elements even without aria-invalid
   const parent = el.closest('div, fieldset, li');
   if (parent) {
-    const errorEl = parent.querySelector('.error, [role="alert"], .field-error, .input-error, [class*="error" i]');
+    const errorEl = parent.querySelector('[role="alert"], .error, .field-error, .input-error, [class*="error" i]');
     if (errorEl && isVisible(errorEl)) {
       const text = errorEl.textContent?.trim();
-      if (text) return text;
+      if (text && text.length > 2) return text;
     }
   }
 

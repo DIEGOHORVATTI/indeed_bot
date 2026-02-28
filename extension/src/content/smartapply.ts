@@ -678,13 +678,36 @@ async function handleQuestionnaire(): Promise<{ needsUserInput: boolean; fieldLa
     const constraints = getInputConstraints(inp);
     log(`📝 Field: "${label}" [type=${constraints.type}, required=${constraints.required}${constraints.placeholder ? `, placeholder=${constraints.placeholder}` : ''}${constraints.maxLength ? `, maxLen=${constraints.maxLength}` : ''}${constraints.min ? `, min=${constraints.min}` : ''}${constraints.max ? `, max=${constraints.max}` : ''}${constraints.pattern ? `, pattern=${constraints.pattern}` : ''}]`);
 
+    // Detect if this is actually a date field (Indeed uses type="text" for dates)
+    const isDateField = constraints.type === 'date'
+      || !!constraints.placeholder?.match(/[DMY]{2,4}/i)
+      || !!(inp.getAttribute('aria-label') || '').match(/dat[ae]/i)
+      || !!label.match(/\b(data|date|when|quando|início|start|término|end|from|until|até)\b/i);
+
+    // If we detected it's a date but have no format hint, check error messages on page
+    if (isDateField && !constraints.placeholder?.match(/[DMY]{2,4}/i)) {
+      const pageText = document.body?.innerText || '';
+      const formatMatch = pageText.match(/(DD\/MM\/YYYY|MM\/DD\/YYYY|YYYY-MM-DD)/i);
+      if (formatMatch) {
+        constraints.placeholder = formatMatch[1];
+        log(`📅 Detected date format from page text: ${formatMatch[1]}`);
+      } else {
+        // Default to DD/MM/YYYY for br.indeed.com
+        const isBrazil = window.location.hostname.includes('br.indeed');
+        constraints.placeholder = isBrazil ? 'DD/MM/YYYY' : 'MM/DD/YYYY';
+        log(`📅 No date format found, defaulting to: ${constraints.placeholder}`);
+      }
+    }
+
     // Enrich the question with format/type hints so AI knows what to produce
     let enrichedLabel = label;
-    if (constraints.placeholder) {
-      // Date fields: tell AI the exact format expected
-      if (constraints.placeholder.match(/[DMY]{2,4}/i)) {
-        enrichedLabel = `${label} (format: ${constraints.placeholder})`;
-      } else if (!label.toLowerCase().includes(constraints.placeholder.toLowerCase())) {
+    if (isDateField && constraints.placeholder) {
+      enrichedLabel = `${label} (MUST answer in exact format: ${constraints.placeholder}, example: ${
+        constraints.placeholder === 'DD/MM/YYYY' ? '15/03/2024' :
+        constraints.placeholder === 'MM/DD/YYYY' ? '03/15/2024' : '2024-03-15'
+      })`;
+    } else if (constraints.placeholder) {
+      if (!label.toLowerCase().includes(constraints.placeholder.toLowerCase())) {
         enrichedLabel = `${label} (${constraints.placeholder})`;
       }
     }
@@ -694,6 +717,9 @@ async function handleQuestionnaire(): Promise<{ needsUserInput: boolean; fieldLa
       enrichedLabel = `${enrichedLabel} (phone number, digits only)`;
     } else if (constraints.type === 'email') {
       enrichedLabel = `${enrichedLabel} (email address)`;
+    } else if (isDateField) {
+      // Override type in constraints to signal date to the backend
+      constraints.type = 'date';
     }
 
     let filled = false;
@@ -862,26 +888,37 @@ function detectPageErrors(): string[] {
   const errors: string[] = [];
   const seen = new Set<string>();
 
-  // 1. Native HTML5 validation on all inputs
+  // 1. Check all inputs/selects with aria-invalid="true" or validationMessage
   const allInputs = document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(
     'input, textarea, select'
   );
   for (const inp of allInputs) {
-    if (inp.validationMessage && !seen.has(inp.validationMessage)) {
-      const label = getLabelForInput(inp);
-      const msg = label ? `${label}: ${inp.validationMessage}` : inp.validationMessage;
+    const hasAriaInvalid = inp.getAttribute('aria-invalid') === 'true';
+    const hasValidationMsg = 'validationMessage' in inp && inp.validationMessage;
+
+    if (!hasAriaInvalid && !hasValidationMsg) continue;
+
+    const label = getLabelForInput(inp);
+    const errText = detectValidationError(inp);
+
+    if (errText && !seen.has(errText)) {
+      const msg = label ? `${label}: ${errText}` : errText;
       errors.push(msg);
-      seen.add(inp.validationMessage);
+      seen.add(errText);
+    } else if (hasAriaInvalid && label) {
+      const msg = `${label}: campo inválido`;
+      if (!seen.has(msg)) {
+        errors.push(msg);
+        seen.add(msg);
+      }
     }
   }
 
-  // 2. Visible error elements on the page
+  // 2. Visible error elements on the page (role=alert, .error, etc.)
   const errorSelectors = [
     '[role="alert"]',
-    '[aria-invalid="true"]',
     '.error', '.field-error', '.input-error',
-    '[class*="error" i]:not(script):not(style)',
-    '[class*="Error" i]:not(script):not(style)',
+    '[class*="error" i]:not(script):not(style):not(input):not(select):not(textarea)',
     '[data-testid*="error" i]',
   ];
   for (const sel of errorSelectors) {
@@ -925,10 +962,31 @@ async function handlePostClickErrors(pageErrors: string[]): Promise<'fixed' | 'f
     const constraints = getInputConstraints(inp);
     const currentValue = inp.value;
 
+    // Detect date fields and extract format from error message or page
+    const isDateField = constraints.type === 'date'
+      || !!constraints.placeholder?.match(/[DMY]{2,4}/i)
+      || !!domError.match(/[DMY]{2,4}/i)
+      || !!label.match(/\b(data|date|when|quando|início|start|término|end)\b/i);
+
+    if (isDateField) {
+      // Extract format from error message (e.g. "Insira as datas no formato DD/MM/YYYY")
+      const formatFromError = domError.match(/(DD\/MM\/YYYY|MM\/DD\/YYYY|YYYY-MM-DD)/i);
+      if (formatFromError) {
+        constraints.placeholder = formatFromError[1];
+      } else if (!constraints.placeholder?.match(/[DMY]{2,4}/i)) {
+        const pageText = document.body?.innerText || '';
+        const formatFromPage = pageText.match(/(DD\/MM\/YYYY|MM\/DD\/YYYY|YYYY-MM-DD)/i);
+        constraints.placeholder = formatFromPage?.[1] || 'DD/MM/YYYY';
+      }
+      constraints.type = 'date';
+    }
+
     // Enrich label with format hints for retry
     let enrichedLabel = label;
-    if (constraints.placeholder?.match(/[DMY]{2,4}/i)) {
-      enrichedLabel = `${label} (format: ${constraints.placeholder})`;
+    if (isDateField && constraints.placeholder) {
+      const example = constraints.placeholder === 'DD/MM/YYYY' ? '15/03/2024' :
+        constraints.placeholder === 'MM/DD/YYYY' ? '03/15/2024' : '2024-03-15';
+      enrichedLabel = `${label} (MUST answer in exact format: ${constraints.placeholder}, example: ${example})`;
     } else if (constraints.type === 'number') {
       enrichedLabel = `${label} (answer must be a number only)`;
     } else if (constraints.type === 'tel') {
@@ -937,7 +995,7 @@ async function handlePostClickErrors(pageErrors: string[]): Promise<'fixed' | 'f
 
     const errorContext = `After submitting the form, field "${enrichedLabel}" has error: "${domError}". Current value: "${currentValue}". Page errors: ${pageErrors.join('; ')}. Fix the answer.`;
 
-    log(`🔧 Fixing field "${label}" — error: "${domError}", current: "${currentValue}"`);
+    log(`🔧 Fixing field "${label}" — error: "${domError}", current: "${currentValue}", isDate: ${isDateField}`);
 
     const answer = await askClaude(enrichedLabel, undefined, constraints, errorContext);
     if (answer) {

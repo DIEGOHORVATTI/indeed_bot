@@ -291,18 +291,22 @@ async function applyToJob(job: JobEntry): Promise<true | string | false> {
         settings.backendUrl
       );
 
-      const safeCompany = (jobInfo.company || 'company').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20);
-      const safeTitle = (jobInfo.title || 'job').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20);
+      // Filename = job title with spaces→underscores, sanitized
+      const safeTitle = (jobInfo.title || 'job')
+        .trim()
+        .replace(/\s+/g, '_')
+        .replace(/[^a-zA-Z0-9_\-]/g, '')
+        .substring(0, 60);
 
       // Generate CV PDF (saved to output/ on backend)
       const cvHtml = fillCvTemplate(tailored, settings.profile);
-      cvFilename = `CV_${safeCompany}_${safeTitle}.pdf`;
+      cvFilename = `CV_${safeTitle}.pdf`;
       cvPdfData = await generatePdfFromHtml(cvHtml, settings.backendUrl, cvFilename);
       addLog('info', `CV PDF generated: ${cvFilename} (${(cvPdfData.byteLength / 1024).toFixed(0)}KB)`);
 
       // Generate cover letter PDF (saved to output/ on backend)
       const coverHtml = fillCoverTemplate(tailored, settings.profile);
-      coverFilename = `Cover_${safeCompany}_${safeTitle}.pdf`;
+      coverFilename = `Cover_${safeTitle}.pdf`;
       coverPdfData = await generatePdfFromHtml(coverHtml, settings.backendUrl, coverFilename);
       addLog('info', `Cover letter PDF generated: ${coverFilename}`);
     } catch (err) {
