@@ -72,6 +72,8 @@ export type MessageType =
   | 'CLAUDE_RESPONSE'
   | 'NEED_USER_INPUT'
   | 'STATUS_UPDATE'
+  | 'GET_NEXT_PAGE'
+  | 'NEXT_PAGE'
   | 'GET_STATE'
   | 'SET_STATE'
   | 'START_BOT'

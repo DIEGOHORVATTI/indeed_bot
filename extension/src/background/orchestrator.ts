@@ -128,96 +128,128 @@ async function collectAndApply(): Promise<void> {
 
   for (const searchUrl of settings.searchUrls) {
     if (stopRequested) break;
-
-    addLog('info', `Collecting from: ${searchUrl}`);
-
-    // Create tab group if first URL
-    if (!botTabId) {
-      const { tabId } = await createTabGroup(searchUrl);
-      botTabId = tabId;
-    } else {
-      await navigateTab(botTabId, searchUrl);
-    }
-
-    await waitForTabLoad(botTabId, 15000);
-    await delay(2000); // Wait for Indeed to fully render
-
-    // Collect links from content script
-    const response = await sendToTab(botTabId, { type: 'COLLECT_LINKS' });
-    const links: { url: string; jobKey: string }[] = response?.payload || [];
-
-    // Filter known jobs
-    const newLinks: { url: string; jobKey: string }[] = [];
-    for (const link of links) {
-      if (await registry.isKnown(link.jobKey)) continue;
-      newLinks.push(link);
-    }
-
-    const skipped = links.length - newLinks.length;
-    addLog('info', `Found ${newLinks.length} new jobs${skipped ? ` (${skipped} already processed)` : ''}`);
-
-    // Add to job list
-    for (const link of newLinks) {
-      jobs.push({
-        url: link.url,
-        jobKey: link.jobKey,
-        status: 'pending',
-      });
-    }
-
-    await randomDelay(2000, 4000);
-  }
-
-  // Apply to collected jobs
-  state = 'applying';
-  broadcastStatus();
-
-  for (let i = 0; i < jobs.length; i++) {
-    if (stopRequested) break;
-    if ((state as BotState) === 'paused') {
-      while ((state as BotState) === 'paused' && !stopRequested) {
-        await delay(1000);
-      }
-    }
-    if (stopRequested) break;
-
-    if (settings!.maxApplies > 0 && appliedCount >= settings!.maxApplies) {
-      addLog('info', `Reached max applies limit (${settings!.maxApplies})`);
+    if (settings.maxApplies > 0 && appliedCount >= settings.maxApplies) {
+      addLog('info', `Reached max applies limit (${settings.maxApplies})`);
       break;
     }
 
-    currentJobIndex = i;
-    const job = jobs[i];
+    addLog('info', `Collecting from: ${searchUrl}`);
 
-    if (await registry.isKnown(job.jobKey)) {
-      job.status = 'skipped';
-      job.skipReason = 'already_processed';
-      skippedCount++;
-      continue;
+    // Paginate through ALL pages of this search URL
+    let pageUrl = searchUrl;
+    let pageNum = 1;
+
+    while (pageUrl && !stopRequested) {
+      // Navigate to search page
+      if (!botTabId) {
+        const { tabId } = await createTabGroup(pageUrl);
+        botTabId = tabId;
+      } else {
+        await navigateTab(botTabId, pageUrl);
+      }
+
+      await waitForTabLoad(botTabId, 15000);
+      await delay(2000);
+
+      // Collect links from this page
+      state = 'collecting';
+      broadcastStatus();
+
+      const response = await sendToTab(botTabId, { type: 'COLLECT_LINKS' });
+      const links: { url: string; jobKey: string }[] = response?.payload || [];
+
+      if (links.length === 0) {
+        addLog('info', `No more jobs on page ${pageNum}, moving to next search URL`);
+        break;
+      }
+
+      // Filter known jobs
+      const newLinks: { url: string; jobKey: string }[] = [];
+      for (const link of links) {
+        if (await registry.isKnown(link.jobKey)) continue;
+        newLinks.push(link);
+      }
+
+      const skipped = links.length - newLinks.length;
+      addLog('info', `Page ${pageNum}: found ${newLinks.length} new jobs${skipped ? ` (${skipped} already processed)` : ''}`);
+
+      // Add to job list
+      const batchStartIndex = jobs.length;
+      for (const link of newLinks) {
+        jobs.push({
+          url: link.url,
+          jobKey: link.jobKey,
+          status: 'pending',
+        });
+      }
+
+      // Apply to jobs collected from this page
+      state = 'applying';
+      broadcastStatus();
+
+      for (let i = batchStartIndex; i < jobs.length; i++) {
+        if (stopRequested) break;
+        if ((state as BotState) === 'paused') {
+          while ((state as BotState) === 'paused' && !stopRequested) {
+            await delay(1000);
+          }
+        }
+        if (stopRequested) break;
+
+        if (settings!.maxApplies > 0 && appliedCount >= settings!.maxApplies) {
+          addLog('info', `Reached max applies limit (${settings!.maxApplies})`);
+          return;
+        }
+
+        currentJobIndex = i;
+        const job = jobs[i];
+
+        if (await registry.isKnown(job.jobKey)) {
+          job.status = 'skipped';
+          job.skipReason = 'already_processed';
+          skippedCount++;
+          continue;
+        }
+
+        addLog('info', `[${appliedCount + 1}${settings!.maxApplies ? '/' + settings!.maxApplies : ''}] Applying: ${job.url}`);
+
+        const result = await applyToJob(job);
+
+        if (result === true) {
+          job.status = 'applied';
+          appliedCount++;
+          await registry.markApplied(job.jobKey);
+          addLog('info', `Applied successfully to ${job.title || job.url}`);
+        } else if (typeof result === 'string') {
+          job.status = 'skipped';
+          job.skipReason = result;
+          skippedCount++;
+          await registry.markSkipped(job.jobKey, result);
+          addLog('warning', `Skipped: ${result}`);
+        } else {
+          job.status = 'failed';
+          addLog('error', `Failed to apply to ${job.url}`);
+        }
+
+        broadcastStatus();
+        await randomDelay(3000, 7000);
+      }
+
+      // Check for next page
+      const nextPageUrl = await sendToTab(botTabId, { type: 'GET_NEXT_PAGE' });
+      const nextUrl: string | null = nextPageUrl?.payload || null;
+
+      if (!nextUrl) {
+        addLog('info', `No more pages for this search URL (page ${pageNum})`);
+        break;
+      }
+
+      pageUrl = nextUrl;
+      pageNum++;
+      await randomDelay(2000, 4000);
     }
 
-    addLog('info', `[${appliedCount + 1}${settings!.maxApplies ? '/' + settings!.maxApplies : ''}] Applying: ${job.url}`);
-
-    const result = await applyToJob(job);
-
-    if (result === true) {
-      job.status = 'applied';
-      appliedCount++;
-      await registry.markApplied(job.jobKey);
-      addLog('info', `Applied successfully to ${job.title || job.url}`);
-    } else if (typeof result === 'string') {
-      job.status = 'skipped';
-      job.skipReason = result;
-      skippedCount++;
-      await registry.markSkipped(job.jobKey, result);
-      addLog('warning', `Skipped: ${result}`);
-    } else {
-      job.status = 'failed';
-      addLog('error', `Failed to apply to ${job.url}`);
-    }
-
-    broadcastStatus();
-    await randomDelay(3000, 7000);
+    await randomDelay(2000, 4000);
   }
 }
 

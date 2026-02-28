@@ -139,6 +139,44 @@ function scrapeJobDescription(): JobInfo {
   };
 }
 
+// ── Pagination ──
+
+function getNextPageUrl(): string | null {
+  // Indeed pagination: look for the "Next" / "Próxima" link
+  const nextSelectors = [
+    'a[data-testid="pagination-page-next"]',
+    'nav[aria-label*="pagination"] a:last-child',
+    'nav[role="navigation"] a[aria-label="Next"]',
+    'nav[role="navigation"] a[aria-label="Próxima"]',
+    'a[aria-label="Next"]',
+    'a[aria-label="Próxima"]',
+  ];
+
+  for (const sel of nextSelectors) {
+    const el = document.querySelector(sel) as HTMLAnchorElement | null;
+    if (el && el.href) {
+      // Ensure it's a full URL
+      if (el.href.startsWith('/')) {
+        return `${window.location.origin}${el.href}`;
+      }
+      return el.href;
+    }
+  }
+
+  // Heuristic: find a link/button with "next" or "próxima" text
+  const navLinks = document.querySelectorAll('nav a, [aria-label*="agina"] a');
+  for (const link of navLinks) {
+    const text = (link.textContent || '').toLowerCase().trim();
+    const label = (link.getAttribute('aria-label') || '').toLowerCase();
+    if (text.includes('next') || text.includes('próxima') || label.includes('next') || label.includes('próxima')) {
+      const href = (link as HTMLAnchorElement).href;
+      if (href) return href;
+    }
+  }
+
+  return null;
+}
+
 // ── Message Listener ──
 
 chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) => {
@@ -156,6 +194,11 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
     case 'SCRAPE_JOB': {
       const info = scrapeJobDescription();
       sendResponse({ type: 'JOB_SCRAPED', payload: info });
+      break;
+    }
+    case 'GET_NEXT_PAGE': {
+      const nextUrl = getNextPageUrl();
+      sendResponse({ type: 'NEXT_PAGE', payload: nextUrl });
       break;
     }
     case 'GET_STATE': {
