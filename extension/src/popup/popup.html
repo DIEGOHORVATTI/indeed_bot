@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="header">
+    <h1>Indeed Auto Apply</h1>
+    <span id="status-badge" class="badge idle">Idle</span>
+  </div>
+
+  <div class="stats">
+    <div class="stat">
+      <span class="stat-value" id="applied-count">0</span>
+      <span class="stat-label">Applied</span>
+    </div>
+    <div class="stat">
+      <span class="stat-value" id="skipped-count">0</span>
+      <span class="stat-label">Skipped</span>
+    </div>
+    <div class="stat">
+      <span class="stat-value" id="total-count">0</span>
+      <span class="stat-label">Total</span>
+    </div>
+  </div>
+
+  <div id="current-job" class="current-job" style="display:none">
+    <span class="label">Current:</span>
+    <span id="current-job-text"></span>
+  </div>
+
+  <div class="controls">
+    <button id="btn-start" class="btn btn-primary">Start</button>
+    <button id="btn-pause" class="btn btn-secondary" style="display:none">Pause</button>
+    <button id="btn-resume" class="btn btn-primary" style="display:none">Resume</button>
+    <button id="btn-stop" class="btn btn-danger" style="display:none">Stop</button>
+  </div>
+
+  <div class="log-container">
+    <h2>Activity Log</h2>
+    <div id="log" class="log"></div>
+  </div>
+
+  <div class="footer">
+    <a href="#" id="btn-options">Settings</a>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

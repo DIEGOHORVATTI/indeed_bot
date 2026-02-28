@@ -206,6 +206,10 @@ __marimo__/
 *.swo
 *.swp
 
+# Node / Extension
+node_modules/
+extension/dist/
+
 # indeed_bot specific files
 logs.txt
 user_data_dir/

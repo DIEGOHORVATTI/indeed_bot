@@ -1,0 +1,55 @@
+{
+  "manifest_version": 3,
+  "name": "Indeed Auto Apply",
+  "version": "0.1.0",
+  "description": "Auto-apply to Indeed jobs with AI-tailored CV and smart form filling",
+  "permissions": [
+    "tabs",
+    "tabGroups",
+    "storage",
+    "notifications",
+    "alarms",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "*://*.indeed.com/*",
+    "http://localhost:*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.indeed.com/*"
+      ],
+      "exclude_matches": [
+        "*://smartapply.indeed.com/*"
+      ],
+      "js": ["content/indeed.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "*://smartapply.indeed.com/*"
+      ],
+      "js": ["content/smartapply.js"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "assets/icons/icon16.png",
+      "48": "assets/icons/icon48.png",
+      "128": "assets/icons/icon128.png"
+    }
+  },
+  "options_page": "options/options.html",
+  "icons": {
+    "16": "assets/icons/icon16.png",
+    "48": "assets/icons/icon48.png",
+    "128": "assets/icons/icon128.png"
+  }
+}

@@ -18,6 +18,9 @@ dependencies = [
   "pydantic>=2",
   "xhtml2pdf>=0.2.16",
   "python-docx>=1.2.0",
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.34",
+  "anthropic>=0.52",
 ]
 
 [project.urls]

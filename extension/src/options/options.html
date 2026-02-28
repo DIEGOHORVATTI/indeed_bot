@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Indeed Auto Apply — Settings</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      max-width: 700px;
+      margin: 0 auto;
+      padding: 40px 20px;
+      color: #2d2d2d;
+      background: #f8f9fa;
+    }
+    h1 {
+      font-size: 24px;
+      color: #16213e;
+      margin-bottom: 8px;
+    }
+    .subtitle {
+      color: #6c757d;
+      margin-bottom: 32px;
+    }
+    .section {
+      background: #fff;
+      border-radius: 8px;
+      padding: 24px;
+      margin-bottom: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    .section h2 {
+      font-size: 16px;
+      color: #16213e;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid #e9ecef;
+    }
+    .field {
+      margin-bottom: 16px;
+    }
+    .field label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: #495057;
+      margin-bottom: 4px;
+    }
+    .field .hint {
+      font-size: 11px;
+      color: #6c757d;
+      margin-bottom: 4px;
+    }
+    .field input[type="text"],
+    .field input[type="number"],
+    .field select,
+    .field textarea {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid #ced4da;
+      border-radius: 6px;
+      font-size: 13px;
+      font-family: inherit;
+    }
+    .field textarea { min-height: 100px; resize: vertical; font-family: 'SF Mono', Consolas, monospace; font-size: 12px; }
+    .field input:focus, .field textarea:focus, .field select:focus {
+      outline: none;
+      border-color: #16213e;
+      box-shadow: 0 0 0 2px rgba(22, 33, 62, 0.15);
+    }
+    .row { display: flex; gap: 12px; }
+    .row .field { flex: 1; }
+    .btn {
+      padding: 10px 24px;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-primary { background: #16213e; color: #fff; }
+    .btn-primary:hover { background: #1a2a4a; }
+    .actions {
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+      margin-top: 24px;
+    }
+    .saved {
+      color: #198754;
+      font-weight: 600;
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .saved.show { opacity: 1; }
+    .toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .toggle input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Indeed Auto Apply</h1>
+  <p class="subtitle">Configure your bot settings</p>
+
+  <div class="section">
+    <h2>Search</h2>
+    <div class="field">
+      <label for="search-urls">Search URLs (one per line)</label>
+      <div class="hint">Go to Indeed, configure your filters, copy the URL</div>
+      <textarea id="search-urls" rows="4" placeholder="https://br.indeed.com/jobs?q=full+stack&l=..."></textarea>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label for="language">Language</label>
+        <select id="language">
+          <option value="br">Brasil (br)</option>
+          <option value="us">USA (us)</option>
+          <option value="uk">UK (uk)</option>
+          <option value="fr">France (fr)</option>
+          <option value="de">Germany (de)</option>
+          <option value="es">Spain (es)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="max-applies">Max Applies</label>
+        <div class="hint">0 = unlimited</div>
+        <input type="number" id="max-applies" min="0" value="0">
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Profile</h2>
+    <div class="row">
+      <div class="field">
+        <label for="profile-name">Name</label>
+        <input type="text" id="profile-name">
+      </div>
+      <div class="field">
+        <label for="profile-email">Email</label>
+        <input type="text" id="profile-email">
+      </div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label for="profile-phone">Phone</label>
+        <input type="text" id="profile-phone">
+      </div>
+      <div class="field">
+        <label for="profile-location">Location</label>
+        <input type="text" id="profile-location">
+      </div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label for="profile-linkedin">LinkedIn</label>
+        <input type="text" id="profile-linkedin">
+      </div>
+      <div class="field">
+        <label for="profile-github">GitHub</label>
+        <input type="text" id="profile-github">
+      </div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label for="profile-instagram">Instagram</label>
+        <input type="text" id="profile-instagram">
+      </div>
+      <div class="field">
+        <label for="profile-portfolio">Portfolio</label>
+        <input type="text" id="profile-portfolio">
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Personalization</h2>
+    <div class="field">
+      <div class="toggle">
+        <input type="checkbox" id="personalization-enabled" checked>
+        <label for="personalization-enabled">Generate AI-tailored CV and cover letter per job</label>
+      </div>
+    </div>
+    <div class="field">
+      <label for="base-cv">Base CV (Markdown)</label>
+      <textarea id="base-cv" rows="8" placeholder="Paste your base CV in markdown format..."></textarea>
+    </div>
+    <div class="field">
+      <label for="base-cover">Base Cover Letter (Markdown)</label>
+      <textarea id="base-cover" rows="6" placeholder="Paste your base cover letter..."></textarea>
+    </div>
+  </div>
+
+  <div class="actions">
+    <span class="saved" id="saved-msg">Settings saved!</span>
+    <button class="btn btn-primary" id="btn-save">Save Settings</button>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>
