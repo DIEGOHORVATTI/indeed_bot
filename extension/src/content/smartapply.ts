@@ -729,11 +729,12 @@ async function handleQuestionnaire(): Promise<{ needsUserInput: boolean; fieldLa
     }
   }
 
-  // Selects
+  // Selects (skip visibility check — Indeed often hides native selects with CSS but they're still interactive)
   const selects = document.querySelectorAll<HTMLSelectElement>('select');
   for (const sel of selects) {
-    if (!isVisible(sel)) continue;
-    if (sel.value) continue;
+    // Process if: empty value, OR aria-invalid (form tried to submit but select wasn't filled)
+    const needsFilling = !sel.value || sel.getAttribute('aria-invalid') === 'true';
+    if (!needsFilling) continue;
 
     const label = getLabelForInput(sel);
     if (!label) continue;
@@ -788,9 +789,28 @@ async function handleQuestionnaire(): Promise<{ needsUserInput: boolean; fieldLa
 
     let groupLabel = '';
     try {
-      const parent = groupRadios[0].closest('fieldset, div');
-      const legendOrLabel = parent?.querySelector('legend, label, span');
-      groupLabel = legendOrLabel?.textContent?.trim() || name;
+      // Walk up to find the question container (not the individual radio wrapper)
+      const questionContainer = groupRadios[0].closest('[data-testid*="input-q_"], .ia-Questions-item, fieldset');
+      if (questionContainer) {
+        // Look for the label/heading of the question group (not individual radio labels)
+        const labelEl = questionContainer.querySelector('[data-testid*="-label"] [data-testid="safe-markup"], legend, [class*="label"]');
+        groupLabel = labelEl?.textContent?.trim() || '';
+      }
+      if (!groupLabel) {
+        // Fallback: find the closest parent with a label that's NOT one of the radio options
+        const parent = groupRadios[0].closest('fieldset, [class*="Questions-item"], [id^="q_"]');
+        const allLabels = parent?.querySelectorAll('label, legend, span') || [];
+        for (const lbl of allLabels) {
+          const text = lbl.textContent?.trim() || '';
+          // Skip if it's one of the radio option labels
+          if (optionLabels.includes(text)) continue;
+          if (text.length > 5 && text.length < 500) {
+            groupLabel = text;
+            break;
+          }
+        }
+      }
+      if (!groupLabel) groupLabel = name;
     } catch {
       groupLabel = name;
     }
@@ -918,6 +938,44 @@ async function handlePostClickErrors(pageErrors: string[]): Promise<'fixed' | 'f
       log(`🔧 Filled empty required field "${label}" with: "${answer}"`);
       anyFixed = true;
       await waitMs(300);
+    }
+  }
+
+  // Fix selects with aria-invalid or empty required value
+  const allSelects = document.querySelectorAll<HTMLSelectElement>('select');
+  for (const sel of allSelects) {
+    const hasError = sel.getAttribute('aria-invalid') === 'true' || (!sel.value && sel.required);
+    if (!hasError) continue;
+
+    const label = getLabelForInput(sel);
+    if (!label) continue;
+
+    const opts = Array.from(sel.querySelectorAll('option'));
+    const optionTexts: string[] = [];
+    const optionValues: string[] = [];
+    for (const opt of opts) {
+      if (opt.value) {
+        optionTexts.push(opt.textContent?.trim() || '');
+        optionValues.push(opt.value);
+      }
+    }
+
+    if (optionTexts.length === 0) continue;
+
+    log(`🔧 Fixing select "${label}" — aria-invalid or empty, ${optionTexts.length} options`);
+
+    const answer = await askClaude(
+      label, optionTexts, undefined,
+      `This select field has error: "Escolha uma opção para continuar". Page errors: ${pageErrors.join('; ')}. Pick the correct option.`
+    );
+    if (answer) {
+      const idx = optionTexts.indexOf(answer);
+      if (idx >= 0) {
+        selectOption(sel, optionValues[idx]);
+        log(`🔧 Fixed select "${label}" with: "${answer}"`);
+        anyFixed = true;
+        await waitMs(300);
+      }
     }
   }
 
