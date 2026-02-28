@@ -5,12 +5,13 @@
 - Phone: +55 49 991954455
 - LinkedIn: https://www.linkedin.com/in/diego-horvatti/
 - GitHub: https://github.com/diegohorvatti
+- Instagram: https://www.instagram.com/diegohorvatti
 - Portfolio: https://portfolio-ten-gray-50.vercel.app/
 - Location: Florianópolis, Santa Catarina, Brasil
 
 ## Professional Summary
 
-Software Engineer with 5+ years of experience in TypeScript, React.js, Next.js, and Node.js. Specialized in high-performance front-end (Web Components, video players at scale), omnichannel platforms, and microservices with Express/tRPC. Hands-on with AWS, Docker, CI/CD pipelines, and automated testing (Jest, Cypress, E2E). Proven results in core refactoring, large-scale form systems, and KPI-driven dashboards.
+Software Engineer with 5+ years of experience in TypeScript, React.js, Next.js, and Node.js. Specialized in high-performance front-end (Web Components, video players at scale), omnichannel platforms, and microservices with Express/tRPC. Hands-on with AWS, Docker, CI/CD pipelines, and automated testing (Jest, Cypress, E2E). Proven results in core refactoring, large-scale form systems, and KPI-driven dashboards. Passionate about Startups and Technology companies — thrives in fast-paced, product-driven environments.
 
 ## Skills
 

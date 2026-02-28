@@ -14,6 +14,7 @@ class ProfileConfig(BaseModel):
     location: str = Field(..., description="City, State, Country")
     linkedin: str = Field("", description="LinkedIn profile URL")
     github: str = Field("", description="GitHub profile URL")
+    instagram: str = Field("", description="Instagram profile URL")
     portfolio: str = Field("", description="Portfolio/website URL")
 
 

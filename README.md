@@ -1,34 +1,41 @@
 # Indeed Auto-Apply Bot
 
-**WARNING:**
-This guide explains how to use this bot. Use at your own risk. Indeed may change their website or introduce new protections (such as captchas or anti-bot measures) at any time, which could break this tool or result in your account being restricted. This is for educational purposes only.
+Bot que aplica automaticamente em vagas do Indeed com "Candidatura Simplificada" (Indeed Apply).
+
+> **Aviso:** Use por sua conta e risco. O Indeed pode alterar o site ou adicionar proteções anti-bot a qualquer momento.
 
 ---
 
 ## Features
 
-- Automatically finds and applies to jobs on Indeed with "Indeed Apply"
-- Uses [Camoufox](https://github.com/daijro/camoufox) for stealth browser automation
-- Multi-step application wizard handling (resume upload, personal info, submit)
-- AI-powered CV/cover letter personalization per job (via Claude CLI)
-- Multi-language support (BR, EN, FR, DE, ES, etc.)
-- Configurable apply limits and run modes
+- Aplica automaticamente em vagas com "Indeed Apply" via [Camoufox](https://github.com/daijro/camoufox)
+- CV e carta de apresentação personalizados por vaga (via Claude CLI)
+- Upload de currículo via API do smartapply (fallback: UI click + file input)
+- Questionários preenchidos automaticamente (respostas padrão + cache + Claude CLI)
+- Detecção de vagas externas (redireciona para site da empresa) — pula automaticamente
+- Registro persistente de vagas aplicadas/puladas (`job_registry.json`) — nunca aplica duas vezes
+- Verificação pós-aplicação via `myjobs.indeed.com/applied`
+- Suporte multi-idioma (BR, EN, FR, DE, ES)
+- Respostas padrão configuráveis:
+  - PCD/Deficiência → Não
+  - Modelo de contratação → PJ
+  - Pretensão salarial → baseada no nível da vaga (Junior 3k, Pleno 9k, Sênior 14k)
+- Cache de respostas de questionários (`answer_cache.json`) — acumula entre execuções
 
 ---
 
-## Prerequisites
+## Pré-requisitos
 
 - Python 3.9+
-- [uv](https://github.com/astral-sh/uv) (recommended) or pip
-- An Indeed account with:
-  - Your CV already uploaded
-  - Your name, address, and phone number filled in your Indeed profile
+- [uv](https://github.com/astral-sh/uv) (recomendado) ou pip
+- Conta no Indeed com CV já carregado e perfil preenchido (nome, endereço, telefone)
+- [Claude CLI](https://docs.anthropic.com/en/docs/claude-cli) instalado (para personalização e respostas inteligentes)
 
 ---
 
 ## Setup
 
-1. **Clone and install dependencies:**
+1. **Clone e instale:**
 
     ```bash
     git clone https://github.com/DIEGOHORVATTI/indeed_bot.git
@@ -36,26 +43,31 @@ This guide explains how to use this bot. Use at your own risk. Indeed may change
     uv sync
     ```
 
-2. **Edit `config.yaml`:**
+2. **Configure `config.yaml`:**
 
     ```yaml
+    profile:
+      name: 'Seu Nome'
+      email: 'email@example.com'
+      phone: '+55 00 000000000'
+      location: 'Cidade, Estado, País'
+      linkedin: 'https://linkedin.com/in/seu-perfil'
+      github: 'https://github.com/seu-user'
+
     search:
-      # Option A: multiple pre-built search URLs
+      # Opção A: múltiplas URLs de busca
       base_urls:
         - 'https://br.indeed.com/jobs?q=full+stack&l=Florianópolis&fromage=7&radius=100'
         - 'https://br.indeed.com/jobs?q=nodejs&l=Brasil&sc=0kf%3Aattr%28DSQF7%29%3B'
 
-      # Option B: single URL with pagination
+      # Opção B: URL única com paginação
       base_url: 'https://br.indeed.com/jobs?q=full+stack&l=Florianópolis'
       start: 0
       end: 100
 
     camoufox:
       user_data_dir: 'user_data_dir'
-      language: 'br'  # br, us, uk, fr, de, es, etc.
-      # proxy_server: 'socks5://host:port'  # optional
-      # proxy_username: 'user'               # optional
-      # proxy_password: 'pass'               # optional
+      language: 'br'  # br, us, uk, fr, de, es
 
     personalization:
       enabled: true
@@ -65,152 +77,142 @@ This guide explains how to use this bot. Use at your own risk. Indeed may change
       output_dir: 'output'
     ```
 
-    | Field | Description |
+    | Campo | Descrição |
     |---|---|
-    | `base_urls` | List of search URLs (takes priority over `base_url`) |
-    | `base_url` | Single search URL, paginated with `start`/`end` |
-    | `language` | Indeed locale code (`br`, `us`, `uk`, `fr`, `de`, etc.) |
-    | `user_data_dir` | Browser profile directory (persists login session) |
-    | `personalization.enabled` | Enable AI-tailored CV/cover letter per job |
+    | `profile` | Dados pessoais usados nos templates de CV/carta |
+    | `base_urls` | Lista de URLs de busca (prioridade sobre `base_url`) |
+    | `base_url` | URL única, paginada com `start`/`end` |
+    | `language` | Código do Indeed (`br`, `us`, `uk`, `fr`, `de`) |
+    | `user_data_dir` | Diretório do perfil do browser (mantém sessão de login) |
+    | `personalization.enabled` | Gera CV/carta personalizados por vaga via Claude |
 
-3. **How to get your search URL:**
+3. **Como pegar a URL de busca:**
 
-    - Go to [Indeed](https://www.indeed.com/) in your browser
-    - Set your filters (job title, location, remote, date posted, etc.)
-    - Click **Find jobs**
-    - Copy the URL from your browser's address bar
-    - Paste it into `config.yaml`
-
-    ![How to get your base_url](assets/Readme.png)
-
-4. **Upload your CV to Indeed:**
-    - Go to your Indeed profile and upload your CV
-    - Make sure your name, address, and phone number are filled in
+    - Vá no [Indeed](https://www.indeed.com/)
+    - Configure seus filtros (cargo, localização, remoto, data, etc.)
+    - Clique em **Buscar vagas**
+    - Copie a URL da barra de endereço
+    - Cole no `config.yaml`
 
 ---
 
-## Usage
+## Uso
 
 ```bash
-# Full mode (two-pass paginated search, default)
+# Modo full (coleta tudo, depois aplica)
 uv run python -m app
 
-# Minimal mode (single-pass, no pagination)
+# Modo minimal (coleta e aplica por página — mais rápido para testar)
 uv run python -m app --mode minimal
 
-# Limit number of applications
+# Limitar número de aplicações
 uv run python -m app --max 10
 
-# Combine options
-uv run python -m app --mode minimal --max 5 --config my_config.yaml
+# Testar com 1 vaga
+uv run python -m app --max 1 --mode minimal
+
+# Config customizado
+uv run python -m app --config meu_config.yaml
 ```
 
-### CLI Options
-
-```
-usage: indeed-bot [-h] [--mode {full,minimal}] [--max MAX_APPLIES] [--config CONFIG]
-
-options:
-  --mode {full,minimal}  Run mode (default: full)
-  --max MAX_APPLIES      Max jobs to apply to (default: unlimited)
-  --config CONFIG        Path to config.yaml (default: config.yaml)
-```
-
-### Standalone Scripts
-
-```bash
-# Get login token (auto-fill or manual)
-uv run python scripts/get_token.py --email user@example.com --password pass
-
-# Collect job links only (JSON output)
-uv run python scripts/collect_links.py
-
-# Apply to collected links
-uv run python scripts/apply_jobs.py --max 20 --delay 5
-```
+| Flag | Descrição |
+|---|---|
+| `--mode full` | Coleta todas as vagas primeiro, depois aplica (padrão) |
+| `--mode minimal` | Coleta e aplica por página (mais rápido) |
+| `--max N` | Máximo de aplicações (padrão: ilimitado) |
+| `--config PATH` | Caminho do config.yaml (padrão: `config.yaml`) |
 
 ---
 
-## First Run
+## Primeira execução
 
-1. Run the bot — if not logged in, it will open Indeed's login page:
-
+1. Rode o bot:
     ```bash
-    uv run python -m app
+    uv run python -m app --max 1
     ```
-
-2. Log in manually in the browser window that opens
-3. The bot detects your session cookie and proceeds automatically
-4. Your session is saved in `user_data_dir` for future runs
-
----
-
-## AI Personalization
-
-When `personalization.enabled: true`, the bot will:
-
-1. Scrape the job description from each job page
-2. Call Claude CLI to generate a tailored CV and cover letter (JSON)
-3. Fill HTML templates (`assets/cv_template.html`, `assets/cover_template.html`)
-4. Convert to PDF and upload during the application
-
-Base content files:
-- `assets/base_cv.md` — your CV in markdown (source of truth)
-- `assets/base_cover_letter.md` — your cover letter template
-
-Generated PDFs are saved in `output/`.
+2. O browser abre na página de login do Indeed
+3. Faça login manualmente
+4. O bot detecta o cookie de sessão e continua automaticamente
+5. A sessão é salva em `user_data_dir/` para as próximas execuções
 
 ---
 
-## Project Structure
+## Como funciona
+
+### Fluxo de aplicação
+
+1. **Busca** — Navega pelas páginas de resultados e coleta links de vagas com "Indeed Apply"
+2. **Validação** — Verifica se a URL é do Indeed, pula vagas externas e já aplicadas
+3. **Personalização** — Gera CV e carta de apresentação personalizados via Claude CLI
+4. **Wizard** — Detecta o iframe do smartapply e navega pelo formulário:
+   - Upload de currículo (file input → UI click → API `/api/v1/files` → fallback)
+   - Preenchimento de questionários (padrões → cache → Claude CLI)
+   - Clica Continue/Submit em cada etapa
+5. **Verificação** — Confirma a aplicação em `myjobs.indeed.com/applied`
+6. **Registro** — Salva resultado em `job_registry.json`
+
+### Respostas automáticas de questionários
+
+Ordem de prioridade:
+1. **Respostas padrão** — PCD→Não, Contratação→PJ, Salário→por nível
+2. **Cache** (`answer_cache.json`) — respostas dadas anteriormente para perguntas similares
+3. **Claude CLI** — pergunta ao Claude e salva a resposta no cache
+
+O cache é persistente e acumula entre execuções. Quanto mais rodar, menos chamadas ao Claude.
+
+---
+
+## Estrutura do projeto
 
 ```
 indeed_bot/
 ├── app/
-│   ├── __main__.py          # python -m app entrypoint
-│   ├── cli.py               # Unified CLI (argparse)
-│   ├── bot.py               # IndeedBot class (orchestrator)
+│   ├── __main__.py            # Entrypoint: python -m app
+│   ├── cli.py                 # CLI (argparse)
+│   ├── bot.py                 # IndeedBot (orquestrador)
 │   ├── models/
-│   │   └── config.py        # Pydantic config models
+│   │   └── config.py          # Modelos Pydantic de configuração
 │   ├── services/
-│   │   ├── browser.py       # Camoufox browser setup + proxy
-│   │   ├── cv_generator.py  # Job scraping + Claude CLI calls
-│   │   └── pdf.py           # HTML template filling + PDF conversion
+│   │   ├── browser.py         # Setup do Camoufox + proxy
+│   │   ├── cv_generator.py    # Scraping de vagas + chamadas ao Claude CLI
+│   │   ├── pdf.py             # Templates HTML → PDF (Playwright)
+│   │   ├── answer_cache.py    # Cache de respostas de questionários
+│   │   └── job_registry.py    # Registro persistente de vagas aplicadas/puladas
 │   └── utils/
-│       ├── indeed.py        # collect_links, apply_to_job
-│       ├── login.py         # ensure_ppid_cookie
-│       ├── logger.py        # Dual logger (file + console)
-│       ├── pagination.py    # URL pagination
-│       └── selectors.py     # DOM helpers (find_first, click_first)
-├── scripts/
-│   ├── get_token.py         # Login and print PPID token
-│   ├── collect_links.py     # Collect job links (JSON)
-│   └── apply_jobs.py        # Apply to specific jobs
+│       ├── indeed.py          # Coleta de links, aplicação, wizard, questionários
+│       ├── login.py           # Detecção de cookie de sessão
+│       ├── logger.py          # Logger dual (arquivo + console)
+│       ├── pagination.py      # Paginação de URLs
+│       └── selectors.py       # Helpers DOM (find_first, click_first, find_all)
 ├── assets/
-│   ├── base_cv.md           # Base CV content
-│   ├── base_cover_letter.md # Base cover letter content
-│   ├── cv_template.html     # CV HTML template
-│   └── cover_template.html  # Cover letter HTML template
-├── _tests/                  # Unit tests
-├── config.yaml              # User configuration
-└── pyproject.toml           # Dependencies and project metadata
+│   ├── base_cv.md             # CV base em markdown
+│   ├── base_cover_letter.md   # Carta de apresentação base
+│   ├── cv_template.html       # Template HTML do CV
+│   └── cover_template.html    # Template HTML da carta
+├── config.yaml                # Configuração do usuário
+├── answer_cache.json          # Cache de respostas (persistente)
+├── job_registry.json          # Registro de vagas (persistente)
+└── pyproject.toml             # Dependências e metadata
 ```
 
 ---
 
 ## Troubleshooting
 
-- **Bot gets stuck or fails to apply:** Check `indeed_apply.log` for errors
-- **Login not detected:** Delete `user_data_dir/` and run again to get a fresh session
-- **CV generation fails:** Ensure `claude` CLI is installed and accessible in your PATH
-- **Captcha appears:** Solve it manually in the browser window; the bot will wait and continue
+| Problema | Solução |
+|---|---|
+| Bot não aplica / fica preso | Veja `indeed_apply.log` para erros |
+| Login não detectado | Delete `user_data_dir/` e rode novamente |
+| CV não é gerado | Verifique se `claude` CLI está instalado e no PATH |
+| Captcha aparece | Resolva manualmente no browser; o bot espera e continua |
+| Vaga é pulada com "external_apply" | Correto — a vaga redireciona para site externo |
 
 ---
 
 ## Disclaimer
 
-This project is not affiliated with Indeed. Use at your own risk.
+Este projeto não é afiliado ao Indeed. Use por sua conta e risco.
 
 ## License
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+MIT — veja [LICENSE](LICENSE).
