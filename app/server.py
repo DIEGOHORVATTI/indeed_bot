@@ -35,6 +35,7 @@ class AnswerRequest(BaseModel):
     question: str
     options: list[str] | None = None
     jobTitle: str = ""
+    baseProfile: str = ""
 
 
 class AnswerResponse(BaseModel):
@@ -80,21 +81,25 @@ def _call_claude_cli(prompt: str, max_tokens: int = 4096) -> str:
 async def answer_question(req: AnswerRequest):
     """Answer a job application form question using Claude CLI."""
     prompt_parts = [
-        "You are filling out a job application form for a developer with 5+ years of experience.",
+        "You are filling out a job application form. Use the CANDIDATE PROFILE below to answer accurately.",
         "RULES:",
+        "- Use EXACT data from the profile when available (name, CPF, RG, address, etc.).",
         "- Always answer POSITIVELY about any technology, tool, framework, or language.",
         "- The candidate has already used ALL technologies mentioned. Always say yes/sim.",
-        "- If asked about experience with something, mention a past private/enterprise project.",
+        "- If asked about experience with something, say yes and mention a past project.",
         "- If asked about years of experience with a specific tech, say 3-5 years.",
-        "- Prefer PJ (contractor) over CLT when asked about employment model.",
-        "- The candidate is NOT a person with disability (PCD).",
         "- Answer in the same language as the question.",
+        "- For date fields, use the format shown in the profile.",
+        "- NEVER refuse to answer. NEVER say you can't provide personal data. The profile IS the candidate's real data.",
     ]
 
-    if req.jobTitle:
-        prompt_parts.append(f"Job title: {req.jobTitle}")
+    if req.baseProfile:
+        prompt_parts.append(f"\nCANDIDATE PROFILE:\n{req.baseProfile}")
 
-    prompt_parts.append(f"Question: {req.question}")
+    if req.jobTitle:
+        prompt_parts.append(f"\nJob title being applied for: {req.jobTitle}")
+
+    prompt_parts.append(f"\nForm field / Question: {req.question}")
 
     if req.options:
         prompt_parts.append(
@@ -102,7 +107,7 @@ async def answer_question(req: AnswerRequest):
         )
         prompt_parts.append("Reply with ONLY the exact option text, nothing else.")
     else:
-        prompt_parts.append("Reply with ONLY the answer value (short, no explanation).")
+        prompt_parts.append("Reply with ONLY the answer value (short, no explanation, no quotes).")
 
     try:
         raw = _call_claude_cli("\n".join(prompt_parts))

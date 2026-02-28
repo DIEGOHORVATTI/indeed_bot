@@ -358,7 +358,7 @@ async function applyToJob(job: JobEntry): Promise<true | string | false> {
         coverData: coverPdfData,
         coverFilename,
         jobTitle: job.title || '',
-        profile: settings?.profile,
+        baseProfile: settings?.personalization?.baseProfile || '',
       },
     });
 
@@ -392,7 +392,7 @@ async function applyToJob(job: JobEntry): Promise<true | string | false> {
         // Check if field is now filled
         const retryResponse = await sendToTab(botTabId, {
           type: 'FILL_AND_ADVANCE',
-          payload: { jobTitle: job.title || '', profile: settings?.profile },
+          payload: { jobTitle: job.title || '', baseProfile: settings?.personalization?.baseProfile || '' },
         });
         if (retryResponse?.payload?.action !== 'needs_input') {
           state = 'applying';

@@ -65,7 +65,7 @@ async function handleMessage(
       break;
 
     case 'ASK_CLAUDE': {
-      const { question, options, jobTitle, cacheOnly, storeCache, label, inputType, answer } = message.payload || {};
+      const { question, options, jobTitle, baseProfile, cacheOnly, storeCache, label, inputType, answer } = message.payload || {};
 
       // Cache store request
       if (storeCache) {
@@ -97,8 +97,9 @@ async function handleMessage(
           return;
         }
 
+        const profileContext = baseProfile || settings.personalization?.baseProfile || '';
         const claudeAnswer = await askClaudeForAnswer(
-          question, options, jobTitle || '', settings.backendUrl
+          question, options, jobTitle || '', settings.backendUrl, profileContext
         );
 
         if (claudeAnswer) {

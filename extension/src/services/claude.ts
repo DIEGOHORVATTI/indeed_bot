@@ -7,6 +7,7 @@ interface BackendAnswerRequest {
   question: string;
   options?: string[];
   jobTitle?: string;
+  baseProfile?: string;
 }
 
 interface BackendTailorRequest {
@@ -24,12 +25,14 @@ export async function askClaudeForAnswer(
   question: string,
   options: string[] | undefined,
   jobTitle: string,
-  backendUrl: string
+  backendUrl: string,
+  baseProfile?: string
 ): Promise<string | null> {
   if (!backendUrl) return null;
 
   try {
     const body: BackendAnswerRequest = { question, jobTitle };
+    if (baseProfile) body.baseProfile = baseProfile;
     if (options && options.length > 0) body.options = options;
 
     const response = await fetch(`${backendUrl}/api/answer`, {

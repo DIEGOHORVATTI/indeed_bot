@@ -14,6 +14,7 @@ const fields = {
   personalizationEnabled: $('personalization-enabled'),
   baseCv: $('base-cv') as unknown as HTMLTextAreaElement,
   baseCover: $('base-cover') as unknown as HTMLTextAreaElement,
+  baseProfile: $('base-profile') as unknown as HTMLTextAreaElement,
   profileName: $('profile-name'),
   profileEmail: $('profile-email'),
   profilePhone: $('profile-phone'),
@@ -36,6 +37,7 @@ async function loadSettings(): Promise<void> {
   fields.personalizationEnabled.checked = s.personalization.enabled;
   fields.baseCv.value = s.personalization.baseCv;
   fields.baseCover.value = s.personalization.baseCoverLetter;
+  fields.baseProfile.value = s.personalization.baseProfile || DEFAULT_SETTINGS.personalization.baseProfile;
   fields.profileName.value = s.profile.name;
   fields.profileEmail.value = s.profile.email;
   fields.profilePhone.value = s.profile.phone;
@@ -62,6 +64,7 @@ async function saveSettings(): Promise<void> {
       enabled: fields.personalizationEnabled.checked,
       baseCv: fields.baseCv.value,
       baseCoverLetter: fields.baseCover.value,
+      baseProfile: fields.baseProfile.value,
     },
     profile: {
       name: fields.profileName.value.trim(),
@@ -72,6 +75,14 @@ async function saveSettings(): Promise<void> {
       github: fields.profileGithub.value.trim(),
       instagram: fields.profileInstagram.value.trim(),
       portfolio: fields.profilePortfolio.value.trim(),
+      birthDate: '',
+      country: 'Brasil',
+      rg: '',
+      cpf: '',
+      motherName: '',
+      fatherName: '',
+      address: '',
+      cep: '',
     },
   };
 
