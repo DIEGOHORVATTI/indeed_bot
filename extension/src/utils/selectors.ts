@@ -217,7 +217,7 @@ export function setInputFiles(input: HTMLInputElement, file: File): void {
 export async function verifyUploadAccepted(timeoutMs = 3000, expectedFilename?: string): Promise<boolean> {
   // Snapshot the current label BEFORE waiting, so we can detect a change
   const labelBefore = document.querySelector(
-    '[data-testid="resume-selection-file-resume-radio-card-label"]'
+    '[data-testid="resume-selection-file-resume-upload-radio-card-label"], [data-testid="resume-selection-file-resume-radio-card-label"]'
   )?.textContent?.trim() || '';
 
   const deadline = Date.now() + timeoutMs;
@@ -232,7 +232,7 @@ export async function verifyUploadAccepted(timeoutMs = 3000, expectedFilename?: 
     }
     // Check 2: Indeed resume-selection label CHANGED to show the new filename
     const resumeLabel = document.querySelector(
-      '[data-testid="resume-selection-file-resume-radio-card-label"]'
+      '[data-testid="resume-selection-file-resume-upload-radio-card-label"], [data-testid="resume-selection-file-resume-radio-card-label"]'
     )?.textContent?.trim() || '';
     if (expectedFilename && resumeLabel.includes(expectedFilename.replace('.pdf', ''))) return true;
     if (!expectedFilename && resumeLabel !== labelBefore && resumeLabel.length > 0) return true;

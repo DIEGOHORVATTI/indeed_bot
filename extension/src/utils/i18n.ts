@@ -81,6 +81,7 @@ export const RESUME_OPTIONS_SELECTORS = [
 
 export const UPLOAD_BUTTON_SELECTORS = [
   '[data-testid="ResumeOptionsMenu-upload"]',
+  '[data-testid="resume-selection-file-resume-upload-radio-card-button"]',
   '[data-testid="resume-selection-file-resume-radio-card-button"]',
   'button:visible:has-text("Carregar um arquivo diferente")',
   'button:visible:has-text("carregar um arquivo diferente")',
@@ -123,6 +124,8 @@ export const COVER_LETTER_SELECTORS = [
 ];
 
 export const RESUME_CARD_SELECTORS = [
+  '[data-testid="resume-selection-file-resume-upload-radio-card"]',
+  '[data-testid="resume-selection-file-resume-upload-radio-card-input"]',
   '[data-testid="resume-selection-file-resume-radio-card"]',
   '[data-testid="resume-selection-file-resume-radio-card-input"]',
   '[data-testid="FileResumeCardHeader-title"]',

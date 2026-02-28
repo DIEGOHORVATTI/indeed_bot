@@ -67,7 +67,7 @@ async function waitForFileInput(timeoutMs = 3000): Promise<HTMLInputElement | nu
 async function tryResumeSelectionUpload(file: File): Promise<boolean> {
   // Step 1: Ensure the "file resume" radio card is selected
   const fileRadio = document.querySelector<HTMLInputElement>(
-    '[data-testid="resume-selection-file-resume-radio-card-input"]'
+    '[data-testid="resume-selection-file-resume-upload-radio-card-input"], [data-testid="resume-selection-file-resume-radio-card-input"]'
   );
   if (fileRadio && !fileRadio.checked) {
     log('Resume selection: selecting file resume radio card');
@@ -77,7 +77,7 @@ async function tryResumeSelectionUpload(file: File): Promise<boolean> {
 
   // Step 2: Find the file input
   const fileInput = document.querySelector<HTMLInputElement>(
-    '[data-testid="resume-selection-file-resume-radio-card-file-input"]'
+    '[data-testid="resume-selection-file-resume-upload-radio-card-file-input"], [data-testid="resume-selection-file-resume-radio-card-file-input"]'
   );
 
   if (!fileInput) {
@@ -146,7 +146,7 @@ async function tryResumeSelectionUpload(file: File): Promise<boolean> {
 
   // Step 5: Try "Selecionar arquivo" button with click intercept
   const selectFileBtn = document.querySelector<HTMLButtonElement>(
-    '[data-testid="resume-selection-file-resume-radio-card-button"]'
+    '[data-testid="resume-selection-file-resume-upload-radio-card-button"], [data-testid="resume-selection-file-resume-radio-card-button"]'
   );
   if (selectFileBtn) {
     const interceptClick2 = (e: Event) => {
@@ -162,7 +162,7 @@ async function tryResumeSelectionUpload(file: File): Promise<boolean> {
     fileInput.removeEventListener('click', interceptClick2, { capture: true } as any);
 
     const freshInput2 = document.querySelector<HTMLInputElement>(
-      '[data-testid="resume-selection-file-resume-radio-card-file-input"]'
+      '[data-testid="resume-selection-file-resume-upload-radio-card-file-input"], [data-testid="resume-selection-file-resume-radio-card-file-input"]'
     ) || fileInput;
     setInputFiles(freshInput2, file);
     await waitMs(1000);
