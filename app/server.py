@@ -161,12 +161,11 @@ HIGH-CONVERSION RULES:
 3. KEYWORDS: Extract the top 8-12 technologies/tools mentioned in BOTH the job posting AND the base CV.
 4. SKILLS: Group by category. Put the most job-relevant category first.
 5. EXPERIENCE: Include ALL jobs from the base CV. Start bullets with strong ACTION VERBS. BE SPECIFIC with tools/libraries. Include quantifiable results.
-6. PROJECTS: Select 2-3 projects most relevant to this job.
-7. EDUCATION: Include all education entries from the base CV.
-8. CERTIFICATIONS: List certifications and courses separately.
-9. LANGUAGES: Include language name and proficiency level.
-10. ADDITIONAL INFO: Only include if genuinely relevant.
-11. COVER LETTER: 3-4 paragraphs. Hook with company interest, concrete examples, call to action.
+6. EDUCATION: Include all education entries from the base CV.
+7. CERTIFICATIONS: List certifications and courses separately.
+8. LANGUAGES: Include language name and proficiency level.
+9. ADDITIONAL INFO: Only include if genuinely relevant.
+10. COVER LETTER: 3-4 paragraphs. Hook with company interest, concrete examples, call to action.
 
 Return ONLY a JSON object with these exact keys:
 
@@ -179,8 +178,6 @@ Return ONLY a JSON object with these exact keys:
   "skills": [{{"label": "Front-End", "items": "React.js, Next.js, ..."}}],
   "section_experience": "section title",
   "experience": [{{"title": "job title", "date": "01/2024 – Present", "company": "Company · Location", "bullets": ["..."]}}],
-  "section_projects": "section title",
-  "projects": [{{"name": "Name", "url": "https://...", "description": "one-line"}}],
   "section_education": "section title",
   "education": [{{"degree": "CS – Bachelor", "institution": "University", "period": "2020–2025"}}],
   "section_certifications": "section title",

@@ -141,12 +141,105 @@ export function selectOption(sel: HTMLSelectElement, value: string): void {
   sel.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
-/** Set files on an input[type="file"] using DataTransfer API. */
+/**
+ * Build a unique CSS selector for an input element.
+ */
+function buildInputSelector(input: HTMLInputElement): string {
+  const testId = input.getAttribute('data-testid');
+  if (testId) return `[data-testid="${testId}"]`;
+  const inputId = input.getAttribute('id');
+  if (inputId) return `#${inputId}`;
+  const inputName = input.getAttribute('name');
+  if (inputName) return `input[name="${inputName}"]`;
+  return `input[type="file"]`;
+}
+
+/**
+ * Set files on an input[type="file"] using DataTransfer API with React compatibility.
+ *
+ * Uses a dual approach:
+ * 1. Set files from ISOLATED world (content script) — works for vanilla JS, Vue, etc.
+ * 2. Send a CustomEvent to the MAIN world content script (mainworld.ts) which
+ *    finds React's __reactProps$/__reactFiber$ and calls onChange directly.
+ *
+ * The MAIN world approach is necessary because:
+ * - Content scripts run in ISOLATED world and can't see React internals
+ * - React 18 stores event handlers on __reactProps$<hash> on DOM elements
+ * - Only code in the MAIN world can access these properties
+ */
 export function setInputFiles(input: HTMLInputElement, file: File): void {
+  // Step 1: Set files from ISOLATED world (works for non-React frameworks)
   const dt = new DataTransfer();
   dt.items.add(file);
-  input.files = dt.files;
+
+  const nativeFilesSetter = Object.getOwnPropertyDescriptor(
+    HTMLInputElement.prototype, 'files'
+  )?.set;
+
+  if (nativeFilesSetter) {
+    nativeFilesSetter.call(input, dt.files);
+  } else {
+    input.files = dt.files;
+  }
+
+  // Invalidate React's value tracker from isolated world
+  const tracker = (input as any)._valueTracker;
+  if (tracker) tracker.setValue('');
+
+  // Dispatch events from isolated world (may trigger non-React handlers)
+  input.dispatchEvent(new Event('input', { bubbles: true }));
   input.dispatchEvent(new Event('change', { bubbles: true }));
+
+  // Step 2: Send file data to MAIN world content script via postMessage.
+  // The MAIN world script (mainworld.ts) listens for 'smartapply-set-files'
+  // and calls React's onChange directly. Using postMessage instead of
+  // CustomEvent because postMessage properly serializes data across worlds.
+  const selector = buildInputSelector(input);
+  const reader = new FileReader();
+  reader.onload = () => {
+    const base64 = (reader.result as string).split(',')[1] || '';
+    window.postMessage({
+      type: 'smartapply-set-files',
+      selector,
+      fileName: file.name,
+      fileType: file.type,
+      fileDataBase64: base64,
+    }, '*');
+  };
+  reader.readAsDataURL(file);
+}
+
+/**
+ * Check if a file upload was accepted by the UI.
+ * @param expectedFilename - If provided, checks that the new filename matches (not just any file present)
+ * @param timeoutMs - How long to poll for changes
+ */
+export async function verifyUploadAccepted(timeoutMs = 3000, expectedFilename?: string): Promise<boolean> {
+  // Snapshot the current label BEFORE waiting, so we can detect a change
+  const labelBefore = document.querySelector(
+    '[data-testid="resume-selection-file-resume-radio-card-label"]'
+  )?.textContent?.trim() || '';
+
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    // Check 1: File input has files set with the expected filename
+    const inputs = document.querySelectorAll<HTMLInputElement>('input[type="file"]');
+    for (const fi of inputs) {
+      if (fi.files && fi.files.length > 0) {
+        if (!expectedFilename) return true;
+        if (fi.files[0].name === expectedFilename) return true;
+      }
+    }
+    // Check 2: Indeed resume-selection label CHANGED to show the new filename
+    const resumeLabel = document.querySelector(
+      '[data-testid="resume-selection-file-resume-radio-card-label"]'
+    )?.textContent?.trim() || '';
+    if (expectedFilename && resumeLabel.includes(expectedFilename.replace('.pdf', ''))) return true;
+    if (!expectedFilename && resumeLabel !== labelBefore && resumeLabel.length > 0) return true;
+
+    await new Promise(r => setTimeout(r, 300));
+  }
+  return false;
 }
 
 /** Get label text for an input element. */

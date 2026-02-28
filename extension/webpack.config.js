@@ -5,6 +5,7 @@ module.exports = {
   entry: {
     'background': './src/background/index.ts',
     'content/indeed': './src/content/indeed.ts',
+    'content/mainworld': './src/content/mainworld.ts',
     'content/smartapply': './src/content/smartapply.ts',
     'popup/popup': './src/popup/popup.ts',
     'options/options': './src/options/options.ts',

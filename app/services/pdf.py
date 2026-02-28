@@ -46,7 +46,6 @@ def fill_cv_template(data: dict, profile: dict | None = None) -> str:
     html = html.replace("{{summary}}", data.get("summary", ""))
     html = html.replace("{{section_skills}}", data.get("section_skills", "Competências"))
     html = html.replace("{{section_experience}}", data.get("section_experience", "Experiência Profissional"))
-    html = html.replace("{{section_projects}}", data.get("section_projects", "Projetos"))
     html = html.replace("{{section_education}}", data.get("section_education", "Formação"))
     html = html.replace("{{section_certifications}}", data.get("section_certifications", "Certificações"))
     html = html.replace("{{section_languages}}", data.get("section_languages", "Idiomas"))
@@ -72,18 +71,6 @@ def fill_cv_template(data: dict, profile: dict | None = None) -> str:
   <ul>{bullets}</ul>
 </div>\n"""
     html = html.replace("{{experience}}", exp_html)
-
-    # Projects
-    projects_html = ""
-    for proj in data.get("projects", []):
-        link = proj.get("url", "")
-        name = proj.get("name", "")
-        desc = proj.get("description", "")
-        if link:
-            projects_html += f'<div class="project"><span class="project-name"><a href="{link}">{name}</a></span> — {desc}</div>\n'
-        else:
-            projects_html += f'<div class="project"><span class="project-name">{name}</span> — {desc}</div>\n'
-    html = html.replace("{{projects}}", projects_html)
 
     # Education (dynamic)
     edu_html = ""

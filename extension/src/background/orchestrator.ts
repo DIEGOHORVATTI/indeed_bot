@@ -349,13 +349,14 @@ async function applyToJob(job: JobEntry): Promise<true | string | false> {
       break;
     }
 
-    // Send fill and advance command to smartapply content script
+    // Send fill and advance command to smartapply content script.
+    // ArrayBuffer is NOT JSON-serializable, so convert to number[] for message passing.
     const stepResponse = await sendToTab(botTabId, {
       type: 'FILL_AND_ADVANCE',
       payload: {
-        cvData: cvPdfData,
+        cvData: cvPdfData ? Array.from(new Uint8Array(cvPdfData)) : undefined,
         cvFilename,
-        coverData: coverPdfData,
+        coverData: coverPdfData ? Array.from(new Uint8Array(coverPdfData)) : undefined,
         coverFilename,
         jobTitle: job.title || '',
         baseProfile: settings?.personalization?.baseProfile || '',

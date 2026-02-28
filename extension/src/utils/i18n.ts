@@ -52,6 +52,7 @@ export const SUBMIT_SELECTORS = [
 ];
 
 export const CONTINUE_SELECTORS = [
+  '[data-testid="continue-button"]',
   'button:visible:has-text("Continuer")',
   'button:visible:has-text("Continue")',
   'button:visible:has-text("Continuar")',
@@ -62,44 +63,73 @@ export const CONTINUE_SELECTORS = [
 ];
 
 export const RESUME_OPTIONS_SELECTORS = [
+  '[data-testid="ResumeOptionsMenu"]',
   'button:visible:has-text("opções de currículo")',
+  'button:visible:has-text("Opções de currículo")',
   'button:visible:has-text("Resume options")',
   'button:visible:has-text("resume options")',
   'button:visible:has-text("Opções")',
   'button:visible:has-text("Options")',
-  '[data-testid*="resume"] button:visible',
-  '[data-testid*="Resume"] button:visible',
+  '[data-testid*="resumeSelection"] button:visible',
+  '[data-testid="resume-selection"] button:visible',
   '[aria-label*="resume" i] button:visible',
   'button:visible:has-text("Change")',
   'button:visible:has-text("Alterar")',
+  'button:visible:has-text("Currículo")',
+  'button:visible:has-text("CV")',
 ];
 
 export const UPLOAD_BUTTON_SELECTORS = [
+  '[data-testid="ResumeOptionsMenu-upload"]',
+  '[data-testid="resume-selection-file-resume-radio-card-button"]',
+  'button:visible:has-text("Carregar um arquivo diferente")',
   'button:visible:has-text("carregar um arquivo diferente")',
   'button:visible:has-text("Upload a different file")',
   'button:visible:has-text("upload a different")',
+  'button:visible:has-text("Selecionar arquivo")',
+  'button:visible:has-text("Select file")',
+  'button:visible:has-text("Upload new")',
+  'button:visible:has-text("Upload resume")',
+  'button:visible:has-text("Upload CV")',
+  'button:visible:has-text("Enviar currículo")',
+  'button:visible:has-text("Enviar CV")',
   'button:visible:has-text("Carregar")',
   'button:visible:has-text("Upload")',
   'a:visible:has-text("carregar")',
   'a:visible:has-text("Upload")',
   'a:visible:has-text("upload")',
-  '[data-testid*="upload" i]',
+  'label:visible:has-text("Upload")',
+  'label:visible:has-text("Carregar")',
   '[data-testid="ResumeUploadButton"]',
+  '[data-testid*="uploadResume" i]',
 ];
 
 export const COVER_LETTER_SELECTORS = [
   'button:visible:has-text("cover letter")',
+  'button:visible:has-text("Cover Letter")',
+  'button:visible:has-text("Upload cover")',
   'button:visible:has-text("carta")',
   'button:visible:has-text("carta de apresentação")',
+  'button:visible:has-text("Carta de Apresentação")',
   'a:visible:has-text("cover letter")',
+  'a:visible:has-text("Upload cover")',
   'a:visible:has-text("carta de apresentação")',
+  'a:visible:has-text("Enviar carta")',
   'a:visible:has-text("carta")',
+  'label:visible:has-text("cover letter")',
+  'label:visible:has-text("carta")',
+  '[data-testid*="coverLetter" i] button:visible',
+  '[data-testid*="cover-letter" i] button:visible',
 ];
 
 export const RESUME_CARD_SELECTORS = [
+  '[data-testid="resume-selection-file-resume-radio-card"]',
+  '[data-testid="resume-selection-file-resume-radio-card-input"]',
   '[data-testid="FileResumeCardHeader-title"]',
   '[data-testid="fileResumeCard"]',
   '[data-testid="ResumeCard"]',
+  '[data-testid*="resumeCard" i]',
+  '[data-testid*="resume-display"]',
   'div[class*="ResumeCard"]',
   'div[class*="resume-card"]',
   '[data-testid="resume-display-text"]',

@@ -115,12 +115,11 @@ HIGH-CONVERSION RULES:
    - Max 3-4 bullets per job, most relevant first
    - NEVER write vague bullets like "development and maintenance of modules" — always answer: WHAT tool, to achieve WHAT result, with WHAT measurable impact
    - Keep "Contract (PJ)" or "Full-time (CLT)" labels from the base CV in the company field to clarify employment type
-6. PROJECTS: Select 2-3 projects from the base CV most relevant to this job. Each with name, URL, and a 1-line description emphasizing the SPECIFIC tech stack used and relevance to this job.
-7. EDUCATION: Include all education entries from the base CV.
-8. CERTIFICATIONS: List certifications and courses separately. Include provider name.
-9. LANGUAGES: Include language name and proficiency level with dash separator.
-10. ADDITIONAL INFO: Only include if there's something genuinely relevant not covered elsewhere (e.g., open-source contributions, community involvement). Leave empty string if nothing to add.
-11. COVER LETTER: 3-4 paragraphs. First paragraph: hook with specific interest in the company. Middle: concrete examples matching job requirements with SPECIFIC technologies and results. Last: call to action.
+6. EDUCATION: Include all education entries from the base CV.
+7. CERTIFICATIONS: List certifications and courses separately. Include provider name.
+8. LANGUAGES: Include language name and proficiency level with dash separator.
+9. ADDITIONAL INFO: Only include if there's something genuinely relevant not covered elsewhere (e.g., open-source contributions, community involvement). Leave empty string if nothing to add.
+10. COVER LETTER: 3-4 paragraphs. First paragraph: hook with specific interest in the company. Middle: concrete examples matching job requirements with SPECIFIC technologies and results. Last: call to action.
 
 Return ONLY a JSON object with these exact keys:
 
@@ -145,14 +144,6 @@ Return ONLY a JSON object with these exact keys:
       "date": "01/2024 – Present",
       "company": "Company Name · Location",
       "bullets": ["action verb + achievement + tech", "...", "..."]
-    }}
-  ],
-  "section_projects": "section title (e.g. 'Projetos' or 'Projects')",
-  "projects": [
-    {{
-      "name": "Project Name",
-      "url": "https://github.com/...",
-      "description": "one-line description highlighting relevance to this job"
     }}
   ],
   "section_education": "section title",

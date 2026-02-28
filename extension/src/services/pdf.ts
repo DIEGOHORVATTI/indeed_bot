@@ -54,7 +54,6 @@ export function fillCvTemplate(data: TailoredContent, profile?: ProfileSettings)
   html = html.replace('{{summary}}', data.summary || '');
   html = html.replace('{{section_skills}}', data.section_skills || 'Competências');
   html = html.replace('{{section_experience}}', data.section_experience || 'Experiência Profissional');
-  html = html.replace('{{section_projects}}', data.section_projects || 'Projetos');
   html = html.replace('{{section_education}}', data.section_education || 'Formação');
   html = html.replace('{{section_certifications}}', data.section_certifications || 'Certificações');
   html = html.replace('{{section_languages}}', data.section_languages || 'Idiomas');
@@ -79,13 +78,6 @@ export function fillCvTemplate(data: TailoredContent, profile?: ProfileSettings)
 </div>`;
   }).join('\n');
   html = html.replace('{{experience}}', expHtml);
-
-  // Projects
-  const projHtml = (data.projects || []).map(p => {
-    if (p.url) return `<div class="project"><span class="project-name"><a href="${p.url}">${p.name}</a></span> — ${p.description}</div>`;
-    return `<div class="project"><span class="project-name">${p.name}</span> — ${p.description}</div>`;
-  }).join('\n');
-  html = html.replace('{{projects}}', projHtml);
 
   // Education
   const eduHtml = (data.education || []).map(e =>

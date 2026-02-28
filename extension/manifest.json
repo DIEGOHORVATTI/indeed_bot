@@ -33,6 +33,15 @@
       "matches": [
         "*://smartapply.indeed.com/*"
       ],
+      "js": ["content/mainworld.js"],
+      "run_at": "document_start",
+      "all_frames": true,
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "*://smartapply.indeed.com/*"
+      ],
       "js": ["content/smartapply.js"],
       "run_at": "document_idle",
       "all_frames": true

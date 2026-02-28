@@ -217,8 +217,6 @@ export interface TailoredContent {
     company: string;
     bullets: string[];
   }[];
-  section_projects: string;
-  projects: { name: string; url: string; description: string }[];
   section_education: string;
   education: { degree: string; institution: string; period: string }[];
   section_certifications: string;

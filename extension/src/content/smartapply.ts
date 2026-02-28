@@ -8,7 +8,7 @@
 import { Message } from '../types';
 import {
   findFirst, findAll, clickFirst, isVisible, isDisabled,
-  fillInput, selectOption, setInputFiles, getLabelForInput,
+  fillInput, selectOption, setInputFiles, getLabelForInput, verifyUploadAccepted,
 } from '../utils/selectors';
 import {
   SUBMIT_SELECTORS, CONTINUE_SELECTORS,
@@ -64,17 +64,162 @@ async function waitForFileInput(timeoutMs = 3000): Promise<HTMLInputElement | nu
   return null;
 }
 
+async function tryResumeSelectionUpload(file: File): Promise<boolean> {
+  // Step 1: Ensure the "file resume" radio card is selected
+  const fileRadio = document.querySelector<HTMLInputElement>(
+    '[data-testid="resume-selection-file-resume-radio-card-input"]'
+  );
+  if (fileRadio && !fileRadio.checked) {
+    log('Resume selection: selecting file resume radio card');
+    fileRadio.click();
+    await waitMs(500);
+  }
+
+  // Step 2: Find the file input
+  const fileInput = document.querySelector<HTMLInputElement>(
+    '[data-testid="resume-selection-file-resume-radio-card-file-input"]'
+  );
+
+  if (!fileInput) {
+    log('Resume selection: file input not found via data-testid');
+    return false;
+  }
+
+  log(`Resume selection: found file input, attempting upload of "${file.name}" (${file.size} bytes)`);
+
+  // Step 3: Intercept native file dialog and set files programmatically
+  // The React component listens for 'change' on this input.
+  // We prevent the native dialog from opening by intercepting the click,
+  // then set files and dispatch the change event.
+
+  // First, try the direct approach: set files and dispatch change
+  setInputFiles(fileInput, file);
+  await waitMs(1000);
+  if (await verifyUploadAccepted(3000, file.name)) {
+    log('Resume selection: direct setInputFiles worked');
+    return true;
+  }
+
+  // Step 4: Try clicking "Opções de currículo" → "Carregar um arquivo diferente"
+  // This resets the form and opens a new file picker.
+  // We intercept the click on the file input to prevent the native dialog.
+  const optionsMenuBtn = document.querySelector<HTMLButtonElement>(
+    '[data-testid="ResumeOptionsMenu"]'
+  );
+  if (optionsMenuBtn) {
+    log('Resume selection: opening ResumeOptionsMenu');
+    optionsMenuBtn.click();
+    await waitMs(800);
+
+    const uploadMenuBtn = document.querySelector<HTMLButtonElement>(
+      '[data-testid="ResumeOptionsMenu-upload"]'
+    );
+    if (uploadMenuBtn) {
+      // Intercept the file input click to prevent native dialog from opening
+      const interceptClick = (e: Event) => {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      };
+      fileInput.addEventListener('click', interceptClick, { once: true, capture: true });
+
+      log('Resume selection: clicking ResumeOptionsMenu-upload (with click interceptor)');
+      uploadMenuBtn.click();
+      await waitMs(500);
+
+      // Remove interceptor in case it wasn't triggered
+      fileInput.removeEventListener('click', interceptClick, { capture: true } as any);
+
+      // Now set the files on the (possibly reset) input
+      // Re-query in case the DOM changed
+      const freshInput = document.querySelector<HTMLInputElement>(
+        '[data-testid="resume-selection-file-resume-radio-card-file-input"]'
+      ) || fileInput;
+
+      setInputFiles(freshInput, file);
+      await waitMs(1000);
+      if (await verifyUploadAccepted(5000, file.name)) {
+        log('Resume selection: upload via menu approach worked');
+        return true;
+      }
+    }
+  }
+
+  // Step 5: Try "Selecionar arquivo" button with click intercept
+  const selectFileBtn = document.querySelector<HTMLButtonElement>(
+    '[data-testid="resume-selection-file-resume-radio-card-button"]'
+  );
+  if (selectFileBtn) {
+    const interceptClick2 = (e: Event) => {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    };
+    fileInput.addEventListener('click', interceptClick2, { once: true, capture: true });
+
+    log('Resume selection: clicking "Selecionar arquivo" with click interceptor');
+    selectFileBtn.click();
+    await waitMs(500);
+
+    fileInput.removeEventListener('click', interceptClick2, { capture: true } as any);
+
+    const freshInput2 = document.querySelector<HTMLInputElement>(
+      '[data-testid="resume-selection-file-resume-radio-card-file-input"]'
+    ) || fileInput;
+    setInputFiles(freshInput2, file);
+    await waitMs(1000);
+    if (await verifyUploadAccepted(5000, file.name)) {
+      log('Resume selection: upload via select file button worked');
+      return true;
+    }
+  }
+
+  // Step 6: API upload as last resort
+  log('Resume selection: trying API upload');
+  const apiResult = await uploadResumeViaApi(file);
+  if (apiResult) {
+    log('Resume selection: API upload succeeded, reloading page');
+    window.location.reload();
+    await waitMs(3000);
+    return true;
+  }
+
+  // Step 7: Fallback — find any non-image file input on the page
+  const allFileInputs = document.querySelectorAll<HTMLInputElement>('input[type="file"]');
+  for (const fi of allFileInputs) {
+    if (fi === fileInput) continue;
+    const accept = (fi.getAttribute('accept') || '').toLowerCase();
+    if (accept.includes('image')) continue;
+    log('Resume selection: fallback — setting files on other file input');
+    setInputFiles(fi, file);
+    if (await verifyUploadAccepted(3000, file.name)) return true;
+  }
+
+  return false;
+}
+
 async function handleResumeStep(pdfData?: ArrayBuffer, pdfFilename?: string): Promise<void> {
   if (!pdfData || !pdfFilename) return;
 
   const file = new File([pdfData], pdfFilename, { type: 'application/pdf' });
+  log(`handleResumeStep: file="${pdfFilename}" size=${file.size} bytes (pdfData.byteLength=${pdfData.byteLength})`);
+
+  // Detect resume-selection page and use targeted approach first
+  const isResumeSelectionPage =
+    window.location.href.includes('resume-selection') ||
+    !!document.querySelector('[data-testid*="resume-selection"], [class*="resume-selection"], [id*="resume-selection"]');
+
+  if (isResumeSelectionPage) {
+    log('Detected resume-selection page, using targeted approach');
+    const uploaded = await tryResumeSelectionUpload(file);
+    if (uploaded) return;
+    log('Targeted approach failed, falling through to generic strategies');
+  }
 
   // Strategy 1: Direct file input already visible
   const existingInput = await waitForFileInput(500);
   if (existingInput) {
     log('Strategy 1: found existing file input');
     setInputFiles(existingInput, file);
-    return;
+    if (await verifyUploadAccepted(2000, pdfFilename)) return;
   }
 
   // Strategy 2: Click "Resume options" → "Upload" → file input
@@ -92,7 +237,7 @@ async function handleResumeStep(pdfData?: ArrayBuffer, pdfFilename?: string): Pr
       if (fi) {
         log('Strategy 2: file input found');
         setInputFiles(fi, file);
-        return;
+        if (await verifyUploadAccepted(2000, pdfFilename)) return;
       }
     }
   }
@@ -106,12 +251,12 @@ async function handleResumeStep(pdfData?: ArrayBuffer, pdfFilename?: string): Pr
     if (fi) {
       log('Strategy 3: file input found');
       setInputFiles(fi, file);
-      return;
+      if (await verifyUploadAccepted(2000, pdfFilename)) return;
     }
   }
 
   // Strategy 4: Scan ALL clickables for upload-related text
-  const allClickables = [...document.querySelectorAll('button, a, [role="button"]')];
+  const allClickables = [...document.querySelectorAll('button, a, label, [role="button"]')];
   const uploadKeywords = ['upload', 'carregar', 'enviar arquivo', 'escolher arquivo', 'choose file', 'select file', 'alterar currículo', 'change resume'];
   for (const el of allClickables) {
     if (!isVisible(el as Element)) continue;
@@ -124,7 +269,7 @@ async function handleResumeStep(pdfData?: ArrayBuffer, pdfFilename?: string): Pr
       if (fi) {
         log('Strategy 4: file input found');
         setInputFiles(fi, file);
-        return;
+        if (await verifyUploadAccepted(2000, pdfFilename)) return;
       }
     }
   }
@@ -149,52 +294,130 @@ async function handleResumeStep(pdfData?: ArrayBuffer, pdfFilename?: string): Pr
 }
 
 async function uploadResumeViaApi(file: File): Promise<boolean> {
-  const cookies = document.cookie.split(';').map(c => c.trim());
   let csrfToken = '';
+
+  // Source 1: Cookies
+  const cookies = document.cookie.split(';').map(c => c.trim());
   for (const c of cookies) {
-    if (c.startsWith('XSRF-TOKEN=') || c.startsWith('INDEED_CSRF_TOKEN=')) {
-      csrfToken = c.split('=')[1] || '';
+    if (c.startsWith('XSRF-TOKEN=') || c.startsWith('INDEED_CSRF_TOKEN=') || c.startsWith('CTK=')) {
+      csrfToken = decodeURIComponent(c.split('=')[1] || '');
+      if (csrfToken) break;
     }
   }
-  if (!csrfToken) return false;
+
+  // Source 2: Meta tags
+  if (!csrfToken) {
+    const metaSelectors = ['meta[name="csrf-token"]', 'meta[name="_csrf"]', 'meta[name="indeed-csrf-token"]'];
+    for (const sel of metaSelectors) {
+      const meta = document.querySelector(sel);
+      if (meta) {
+        csrfToken = meta.getAttribute('content') || '';
+        if (csrfToken) break;
+      }
+    }
+  }
+
+  // Source 3: __NEXT_DATA__ embedded JSON
+  if (!csrfToken) {
+    const nextDataEl = document.getElementById('__NEXT_DATA__');
+    if (nextDataEl) {
+      try {
+        const data = JSON.parse(nextDataEl.textContent || '');
+        csrfToken = data?.props?.pageProps?.csrfToken || data?.props?.csrfToken || data?.csrfToken || '';
+      } catch { /* ignore */ }
+    }
+  }
+
+  // Source 4: Hidden input
+  if (!csrfToken) {
+    const hiddenInput = document.querySelector<HTMLInputElement>(
+      'input[name="_csrf"], input[name="csrf_token"], input[name="csrfToken"]'
+    );
+    csrfToken = hiddenInput?.value || '';
+  }
+
+  if (!csrfToken) {
+    log('API upload: no CSRF token found from any source');
+    return false;
+  }
 
   try {
     const fd = new FormData();
     fd.append('file', file, file.name);
     const resp = await fetch('/api/v1/files', {
       method: 'POST',
-      headers: { 'ia-upload-category': 'resume', 'x-xsrf-token': csrfToken },
+      headers: {
+        'ia-upload-category': 'resume',
+        'x-xsrf-token': csrfToken,
+        'x-csrf-token': csrfToken,
+      },
       body: fd,
       credentials: 'include',
     });
-    return resp.ok;
-  } catch {
+
+    if (resp.ok) {
+      log('API upload succeeded');
+      return true;
+    }
+
+    log(`API upload failed: ${resp.status} ${resp.statusText}`);
+    return false;
+  } catch (err) {
+    log(`API upload error: ${err}`);
     return false;
   }
 }
 
-function handleCoverLetter(pdfData?: ArrayBuffer, pdfFilename?: string): void {
+async function handleCoverLetter(pdfData?: ArrayBuffer, pdfFilename?: string): Promise<void> {
   if (!pdfData || !pdfFilename) return;
 
   const file = new File([pdfData], pdfFilename, { type: 'application/pdf' });
 
-  let coverInput = document.querySelector<HTMLInputElement>(
-    '[data-testid="CoverLetterInput"] input[type="file"], input[accept*="pdf"][name*="cover"]'
+  // Strategy 1: Direct file input for cover letter
+  const directInput = document.querySelector<HTMLInputElement>(
+    '[data-testid="CoverLetterInput"] input[type="file"], ' +
+    'input[accept*="pdf"][name*="cover"], ' +
+    '[data-testid*="coverLetter" i] input[type="file"], ' +
+    '[data-testid*="cover-letter" i] input[type="file"]'
   );
+  if (directInput) {
+    log('Cover letter strategy 1: direct input found');
+    setInputFiles(directInput, file);
+    return;
+  }
 
-  if (!coverInput) {
-    const coverBtn = findFirst(COVER_LETTER_SELECTORS);
-    if (coverBtn) {
-      (coverBtn as HTMLElement).click();
-      setTimeout(() => {
-        coverInput = document.querySelector<HTMLInputElement>('input[type="file"]');
-        if (coverInput) setInputFiles(coverInput, file);
-      }, 500);
+  // Strategy 2: Click cover letter button, wait for file input
+  const coverBtn = findFirst(COVER_LETTER_SELECTORS);
+  if (coverBtn) {
+    log(`Cover letter strategy 2: clicking "${(coverBtn as HTMLElement).textContent?.trim()}"`);
+    (coverBtn as HTMLElement).click();
+    const fi = await waitForFileInput(3000);
+    if (fi) {
+      log('Cover letter strategy 2: file input appeared');
+      setInputFiles(fi, file);
       return;
     }
   }
 
-  if (coverInput) setInputFiles(coverInput, file);
+  // Strategy 3: Scan all clickables for cover letter keywords
+  const allClickables = [...document.querySelectorAll('button, a, label, [role="button"]')];
+  const coverKeywords = ['cover letter', 'carta de apresentação', 'carta de apresentacao',
+                         'lettre de motivation', 'anschreiben', 'carta de presentación'];
+  for (const el of allClickables) {
+    if (!isVisible(el as Element)) continue;
+    const text = (el.textContent || '').toLowerCase().trim();
+    if (coverKeywords.some(kw => text.includes(kw))) {
+      log(`Cover letter strategy 3: clicking "${text}"`);
+      (el as HTMLElement).click();
+      const fi = await waitForFileInput(3000);
+      if (fi) {
+        setInputFiles(fi, file);
+        return;
+      }
+    }
+  }
+
+  log('WARNING: No cover letter upload strategy worked');
 }
 
 // ── Questionnaire Handling (all via Claude) ──
@@ -388,12 +611,16 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
       currentJobTitle = jobTitle || '';
       currentBaseProfile = baseProfile || '';
 
+      // Reconstruct ArrayBuffers from number[] (Chrome message passing doesn't support ArrayBuffer)
+      const cvBuffer = cvData ? new Uint8Array(cvData).buffer : undefined;
+      const coverBuffer = coverData ? new Uint8Array(coverData).buffer : undefined;
+
       (async () => {
-        await handleResumeStep(cvData, cvFilename);
+        await handleResumeStep(cvBuffer, cvFilename);
 
         if (hasCoverLetterField()) {
-          handleCoverLetter(coverData, coverFilename);
-          await waitMs(500);
+          await handleCoverLetter(coverBuffer, coverFilename);
+          await waitMs(300);
         }
 
         const result = await handleQuestionnaire();
