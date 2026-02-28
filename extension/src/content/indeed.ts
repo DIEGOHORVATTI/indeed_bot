@@ -180,33 +180,37 @@ function getNextPageUrl(): string | null {
 // ── Message Listener ──
 
 chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) => {
+  // Only handle messages meant for the main Indeed page content script.
+  // Return false for unknown messages so smartapply.js (in iframe) can handle them.
   switch (message.type) {
     case 'COLLECT_LINKS': {
       const links = collectIndeedApplyLinks();
       sendResponse({ type: 'LINKS_COLLECTED', payload: links });
-      break;
+      return true;
     }
     case 'CLICK_APPLY': {
       const result = findAndClickApply();
       sendResponse({ type: 'APPLY_RESULT', payload: result });
-      break;
+      return true;
     }
     case 'SCRAPE_JOB': {
       const info = scrapeJobDescription();
       sendResponse({ type: 'JOB_SCRAPED', payload: info });
-      break;
+      return true;
     }
     case 'GET_NEXT_PAGE': {
       const nextUrl = getNextPageUrl();
       sendResponse({ type: 'NEXT_PAGE', payload: nextUrl });
-      break;
+      return true;
     }
     case 'GET_STATE': {
       sendResponse({ type: 'STATUS_UPDATE', payload: { ready: true, url: window.location.href } });
-      break;
+      return true;
     }
+    default:
+      // Don't handle — let other content scripts (smartapply.js) respond
+      return false;
   }
-  return true; // keep channel open for async
 });
 
 // Announce to service worker that content script is ready

@@ -1,7 +1,7 @@
 """
 Backend API server for the Indeed Auto Apply Chrome extension.
 
-Proxies AI requests to Claude so the extension never sees API keys or model names.
+Proxies AI requests to Claude CLI so the extension never needs API keys.
 Run: uvicorn app.server:app --port 3000
 """
 
@@ -9,23 +9,21 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
+import tempfile
 
-import anthropic
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pydantic import BaseModel
-
-HAIKU = "claude-haiku-4-5-20251001"
-SONNET = "claude-sonnet-4-20250514"
-
-client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
 
 app = FastAPI(title="Indeed Bot Backend")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["POST"],
+    allow_methods=["POST", "GET"],
     allow_headers=["Content-Type"],
 )
 
@@ -51,16 +49,28 @@ class TailorRequest(BaseModel):
     baseCoverLetter: str
 
 
+class PdfRequest(BaseModel):
+    html: str
+    filename: str | None = None  # optional: save a copy to output/
+
+
 # ── Helpers ──
 
 
-def _call_claude(prompt: str, model: str = HAIKU, max_tokens: int = 1024) -> str:
-    response = client.messages.create(
-        model=model,
-        max_tokens=max_tokens,
-        messages=[{"role": "user", "content": prompt}],
+def _call_claude_cli(prompt: str, max_tokens: int = 4096) -> str:
+    """Call Claude via CLI (uses your terminal's authenticated session)."""
+    # Remove CLAUDECODE env var to avoid nested session detection
+    env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
+    result = subprocess.run(
+        ["claude", "-p", prompt, "--output-format", "text"],
+        capture_output=True,
+        text=True,
+        timeout=180,
+        env=env,
     )
-    return response.content[0].text
+    if result.returncode != 0:
+        raise RuntimeError(f"Claude CLI failed (exit {result.returncode}): {result.stderr[:500]}")
+    return result.stdout.strip()
 
 
 # ── Endpoints ──
@@ -68,7 +78,7 @@ def _call_claude(prompt: str, model: str = HAIKU, max_tokens: int = 1024) -> str
 
 @app.post("/api/answer", response_model=AnswerResponse)
 async def answer_question(req: AnswerRequest):
-    """Answer a job application form question using Haiku (fast/cheap)."""
+    """Answer a job application form question using Claude CLI."""
     prompt_parts = [
         "You are filling out a job application form for a developer with 5+ years of experience.",
         "RULES:",
@@ -95,7 +105,7 @@ async def answer_question(req: AnswerRequest):
         prompt_parts.append("Reply with ONLY the answer value (short, no explanation).")
 
     try:
-        raw = _call_claude("\n".join(prompt_parts), model=HAIKU, max_tokens=256)
+        raw = _call_claude_cli("\n".join(prompt_parts))
         answer = raw.strip()
 
         if req.options:
@@ -116,7 +126,7 @@ async def answer_question(req: AnswerRequest):
 
 @app.post("/api/tailor")
 async def tailor_cv(req: TailorRequest):
-    """Generate tailored CV/cover letter content using Sonnet (smarter)."""
+    """Generate tailored CV/cover letter content using Claude CLI."""
     desc = req.jobDescription[:4000]
 
     prompt = f"""You are an expert recruiter and CV strategist. Your goal is to produce a HIGH-CONVERSION CV tailored to a specific job posting. The CV must pass ATS (Applicant Tracking Systems) and grab a recruiter's attention in under 10 seconds.
@@ -183,7 +193,7 @@ Return ONLY a JSON object with these exact keys:
 CRITICAL: Return ONLY the raw JSON. No markdown, no explanation, no wrapping."""
 
     try:
-        raw = _call_claude(prompt, model=SONNET, max_tokens=4096)
+        raw = _call_claude_cli(prompt)
         output = raw.strip()
 
         # Strip markdown fences if present
@@ -196,6 +206,39 @@ CRITICAL: Return ONLY the raw JSON. No markdown, no explanation, no wrapping."""
         raise HTTPException(status_code=502, detail=f"Invalid JSON from AI: {exc}")
     except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc))
+
+
+@app.post("/api/generate-pdf")
+async def generate_pdf(req: PdfRequest):
+    """Convert HTML to PDF using Playwright. Saves a copy to output/ if filename provided."""
+    from app.services.pdf import html_to_pdf
+
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+            tmp_path = tmp.name
+
+        html_to_pdf(req.html, tmp_path)
+
+        with open(tmp_path, "rb") as f:
+            pdf_bytes = f.read()
+
+        os.unlink(tmp_path)
+
+        # Save a copy to output/ directory
+        if req.filename:
+            output_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "output")
+            os.makedirs(output_dir, exist_ok=True)
+            output_path = os.path.join(output_dir, req.filename)
+            with open(output_path, "wb") as f:
+                f.write(pdf_bytes)
+
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename={req.filename or 'document.pdf'}"},
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"PDF generation failed: {exc}")
 
 
 @app.get("/health")

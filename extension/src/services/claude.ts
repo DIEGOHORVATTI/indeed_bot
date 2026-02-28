@@ -100,3 +100,28 @@ export async function generateTailoredContent(
 
   return response.json();
 }
+
+/**
+ * Convert HTML to PDF via backend (Playwright).
+ * Returns the PDF as an ArrayBuffer.
+ */
+export async function generatePdfFromHtml(
+  html: string,
+  backendUrl: string,
+  filename?: string
+): Promise<ArrayBuffer> {
+  if (!backendUrl) throw new Error('Backend URL not configured');
+
+  const response = await fetch(`${backendUrl}/api/generate-pdf`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ html, filename }),
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`PDF generation error (${response.status}): ${err}`);
+  }
+
+  return response.arrayBuffer();
+}

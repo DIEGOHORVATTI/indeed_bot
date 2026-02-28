@@ -188,55 +188,110 @@ async function cacheStore(label: string, inputType: string, answer: string, opti
 
 // ── Resume Upload ──
 
-function handleResumeStep(pdfData?: ArrayBuffer, pdfFilename?: string): void {
+function log(msg: string): void {
+  console.log(`[smartapply] ${msg}`);
+}
+
+function waitMs(ms: number): Promise<void> {
+  return new Promise(r => setTimeout(r, ms));
+}
+
+async function waitForFileInput(timeoutMs = 3000): Promise<HTMLInputElement | null> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const inputs = document.querySelectorAll<HTMLInputElement>('input[type="file"]');
+    for (const fi of inputs) {
+      const accept = (fi.getAttribute('accept') || '').toLowerCase();
+      if (accept.includes('image')) continue;
+      return fi;
+    }
+    await waitMs(300);
+  }
+  return null;
+}
+
+async function handleResumeStep(pdfData?: ArrayBuffer, pdfFilename?: string): Promise<void> {
   if (!pdfData || !pdfFilename) return;
 
   const file = new File([pdfData], pdfFilename, { type: 'application/pdf' });
-  let uploaded = false;
 
-  // Strategy 1: Direct file input
-  const fileInputs = document.querySelectorAll<HTMLInputElement>('input[type="file"]');
-  for (const fi of fileInputs) {
-    const accept = (fi.getAttribute('accept') || '').toLowerCase();
-    if (accept.includes('image')) continue;
-    try {
-      setInputFiles(fi, file);
-      uploaded = true;
-      break;
-    } catch { /* continue */ }
+  // Strategy 1: Direct file input already visible
+  const existingInput = await waitForFileInput(500);
+  if (existingInput) {
+    log('Strategy 1: found existing file input');
+    setInputFiles(existingInput, file);
+    return;
   }
 
-  // Strategy 2: Click through UI to reveal file input
-  if (!uploaded) {
-    const optionsBtn = findFirst(RESUME_OPTIONS_SELECTORS);
-    if (optionsBtn) {
-      (optionsBtn as HTMLElement).click();
-      setTimeout(() => {
-        const uploadBtn = findFirst(UPLOAD_BUTTON_SELECTORS);
-        if (uploadBtn) {
-          (uploadBtn as HTMLElement).click();
-          setTimeout(() => {
-            const fi = document.querySelector<HTMLInputElement>('input[type="file"]');
-            if (fi) {
-              setInputFiles(fi, file);
-              uploaded = true;
-            }
-          }, 500);
-        }
-      }, 500);
+  // Strategy 2: Click "Resume options" or "Change" button → then "Upload" button → file input
+  const optionsBtn = findFirst(RESUME_OPTIONS_SELECTORS);
+  if (optionsBtn) {
+    log(`Strategy 2: clicking options button: "${(optionsBtn as HTMLElement).textContent?.trim()}"`);
+    (optionsBtn as HTMLElement).click();
+    await waitMs(800);
+
+    const uploadBtn = findFirst(UPLOAD_BUTTON_SELECTORS);
+    if (uploadBtn) {
+      log(`Strategy 2: clicking upload button: "${(uploadBtn as HTMLElement).textContent?.trim()}"`);
+      (uploadBtn as HTMLElement).click();
+      const fi = await waitForFileInput(3000);
+      if (fi) {
+        log('Strategy 2: file input found after upload click');
+        setInputFiles(fi, file);
+        return;
+      }
     }
   }
 
-  // Strategy 3: API-based upload (same-origin fetch from smartapply)
-  if (!uploaded) {
-    uploadResumeViaApi(file);
+  // Strategy 3: Look for upload button directly (no options menu)
+  const directUploadBtn = findFirst(UPLOAD_BUTTON_SELECTORS);
+  if (directUploadBtn) {
+    log(`Strategy 3: clicking direct upload button: "${(directUploadBtn as HTMLElement).textContent?.trim()}"`);
+    (directUploadBtn as HTMLElement).click();
+    const fi = await waitForFileInput(3000);
+    if (fi) {
+      log('Strategy 3: file input found');
+      setInputFiles(fi, file);
+      return;
+    }
   }
 
-  // Strategy 4: Select existing resume card
-  if (!uploaded) {
-    const card = findFirst(RESUME_CARD_SELECTORS);
-    if (card) (card as HTMLElement).click();
+  // Strategy 4: Scan ALL buttons/links for upload-related text
+  const allClickables = [...document.querySelectorAll('button, a, [role="button"]')];
+  const uploadKeywords = ['upload', 'carregar', 'enviar arquivo', 'escolher arquivo', 'choose file', 'select file', 'alterar currículo', 'change resume'];
+  for (const el of allClickables) {
+    if (!isVisible(el as Element)) continue;
+    const text = (el.textContent || '').toLowerCase().trim();
+    const ariaLabel = (el.getAttribute('aria-label') || '').toLowerCase();
+    if (uploadKeywords.some(kw => text.includes(kw) || ariaLabel.includes(kw))) {
+      log(`Strategy 4: clicking upload-like element: "${text || ariaLabel}"`);
+      (el as HTMLElement).click();
+      const fi = await waitForFileInput(3000);
+      if (fi) {
+        log('Strategy 4: file input found');
+        setInputFiles(fi, file);
+        return;
+      }
+    }
   }
+
+  // Strategy 5: API-based upload (same-origin fetch from smartapply)
+  log('Strategy 5: trying API upload');
+  const apiResult = await uploadResumeViaApi(file);
+  if (apiResult) {
+    log('Strategy 5: API upload succeeded');
+    return;
+  }
+
+  // Strategy 6: Select existing resume card as last resort
+  const card = findFirst(RESUME_CARD_SELECTORS);
+  if (card) {
+    log(`Strategy 6: clicking existing resume card: "${(card as HTMLElement).textContent?.trim().substring(0, 40)}"`);
+    (card as HTMLElement).click();
+    return;
+  }
+
+  log('WARNING: No resume upload strategy worked');
 }
 
 async function uploadResumeViaApi(file: File): Promise<boolean> {
@@ -532,6 +587,31 @@ function clickContinueOrSubmit(): 'submitted' | 'continued' | 'none' {
   return 'none';
 }
 
+// ── Cover Letter Detection ──
+
+function hasCoverLetterField(): boolean {
+  const selectors = [
+    '[data-testid="CoverLetterInput"]',
+    '[data-testid*="coverLetter" i]',
+    '[data-testid*="cover-letter" i]',
+    '[class*="CoverLetter"]',
+    '[class*="cover-letter"]',
+    'input[type="file"][name*="cover" i]',
+    'input[type="file"][aria-label*="cover" i]',
+    'input[type="file"][aria-label*="carta" i]',
+  ];
+  for (const sel of selectors) {
+    if (document.querySelector(sel)) return true;
+  }
+  const keywords = ['cover letter', 'carta de apresentação', 'carta de apresentacao'];
+  const textEls = document.querySelectorAll('label, span, h3, button, a');
+  for (const el of textEls) {
+    const text = (el.textContent || '').toLowerCase();
+    if (keywords.some(kw => text.includes(kw))) return true;
+  }
+  return false;
+}
+
 // ── Message Listener ──
 
 chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) => {
@@ -541,14 +621,19 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
       currentJobTitle = jobTitle || '';
       if (profile) currentProfile = profile;
 
-      // Handle resume upload
-      handleResumeStep(cvData, cvFilename);
+      // Handle all steps sequentially (async)
+      (async () => {
+        // Handle resume upload
+        await handleResumeStep(cvData, cvFilename);
 
-      // Handle cover letter
-      handleCoverLetter(coverData, coverFilename);
+        // Handle cover letter — only upload if field exists in wizard
+        if (hasCoverLetterField()) {
+          handleCoverLetter(coverData, coverFilename);
+          await waitMs(500);
+        }
 
-      // Handle questionnaire (async)
-      handleQuestionnaire().then(result => {
+        // Handle questionnaire
+        const result = await handleQuestionnaire();
         if (result.needsUserInput) {
           sendResponse({
             type: 'STEP_RESULT',
@@ -557,12 +642,11 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
           return;
         }
 
-        // Wait a bit for form state to settle, then advance
-        setTimeout(() => {
-          const navResult = clickContinueOrSubmit();
-          sendResponse({ type: 'STEP_RESULT', payload: { action: navResult } });
-        }, 500);
-      });
+        // Wait for form state to settle, then advance
+        await waitMs(500);
+        const navResult = clickContinueOrSubmit();
+        sendResponse({ type: 'STEP_RESULT', payload: { action: navResult } });
+      })();
 
       return true; // async response
     }

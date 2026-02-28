@@ -6,7 +6,7 @@
 import { BotState, BotStatus, JobEntry, LogEntry, Message, Settings } from '../types';
 import { JobRegistry } from '../services/job-registry';
 import { AnswerCache } from '../services/answer-cache';
-import { askClaudeForAnswer, generateTailoredContent } from '../services/claude';
+import { askClaudeForAnswer, generateTailoredContent, generatePdfFromHtml } from '../services/claude';
 import { fillCvTemplate, fillCoverTemplate, loadTemplates } from '../services/pdf';
 import { createTabGroup, addTabToGroup, closeTab, navigateTab, waitForTabLoad } from './tab-group';
 import { notifyUserInput } from '../utils/notifications';
@@ -291,13 +291,20 @@ async function applyToJob(job: JobEntry): Promise<true | string | false> {
         settings.backendUrl
       );
 
-      const cvHtml = fillCvTemplate(tailored, settings.profile);
-      const coverHtml = fillCoverTemplate(tailored, settings.profile);
+      const safeCompany = (jobInfo.company || 'company').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20);
+      const safeTitle = (jobInfo.title || 'job').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20);
 
-      // PDF generation would need offscreen document or content script
-      // For now, we'll pass HTML to content script and let it handle PDF
-      // This is a simplification — full implementation would use offscreen API
-      addLog('info', 'CV generated successfully');
+      // Generate CV PDF (saved to output/ on backend)
+      const cvHtml = fillCvTemplate(tailored, settings.profile);
+      cvFilename = `CV_${safeCompany}_${safeTitle}.pdf`;
+      cvPdfData = await generatePdfFromHtml(cvHtml, settings.backendUrl, cvFilename);
+      addLog('info', `CV PDF generated: ${cvFilename} (${(cvPdfData.byteLength / 1024).toFixed(0)}KB)`);
+
+      // Generate cover letter PDF (saved to output/ on backend)
+      const coverHtml = fillCoverTemplate(tailored, settings.profile);
+      coverFilename = `Cover_${safeCompany}_${safeTitle}.pdf`;
+      coverPdfData = await generatePdfFromHtml(coverHtml, settings.backendUrl, coverFilename);
+      addLog('info', `Cover letter PDF generated: ${coverFilename}`);
     } catch (err) {
       addLog('warning', `CV generation failed: ${err}`);
     }
@@ -310,8 +317,26 @@ async function applyToJob(job: JobEntry): Promise<true | string | false> {
   if (applyResult === 'external') return 'external_apply';
   if (applyResult === 'not_found') return 'no_apply_button';
 
-  // Wait for wizard to load
-  await delay(3000);
+  // Wait for smartapply wizard to load (it opens in an iframe)
+  addLog('info', 'Waiting for wizard to load...');
+  let wizardReady = false;
+  for (let attempt = 0; attempt < 15; attempt++) {
+    await delay(2000);
+    try {
+      const readyResp = await sendToTab(botTabId, { type: 'WIZARD_READY' });
+      if (readyResp?.payload?.ready) {
+        addLog('info', `Wizard loaded (buttons: ${readyResp.payload.buttons}, inputs: ${readyResp.payload.inputs})`);
+        wizardReady = true;
+        break;
+      }
+    } catch { /* smartapply script not injected yet */ }
+    addLog('info', `Waiting for wizard... (attempt ${attempt + 1})`);
+  }
+
+  if (!wizardReady) {
+    addLog('warning', 'Wizard did not load');
+    return 'wizard_failed';
+  }
 
   // Walk through wizard steps
   const startTime = Date.now();
@@ -325,7 +350,6 @@ async function applyToJob(job: JobEntry): Promise<true | string | false> {
     }
 
     // Send fill and advance command to smartapply content script
-    // We need to find the smartapply frame's tab
     const stepResponse = await sendToTab(botTabId, {
       type: 'FILL_AND_ADVANCE',
       payload: {
@@ -339,6 +363,13 @@ async function applyToJob(job: JobEntry): Promise<true | string | false> {
     });
 
     const stepResult = stepResponse?.payload?.action;
+
+    // If no response (smartapply not ready yet), wait and retry
+    if (!stepResult) {
+      addLog('info', `Wizard step ${step + 1}: no response, retrying...`);
+      await delay(2000);
+      continue;
+    }
 
     if (stepResult === 'submitted') {
       addLog('info', 'Application submitted');
