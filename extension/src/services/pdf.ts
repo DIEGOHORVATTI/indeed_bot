@@ -11,12 +11,20 @@ let cvTemplate = '';
 let coverTemplate = '';
 
 export async function loadTemplates(): Promise<void> {
-  const cvUrl = chrome.runtime.getURL('assets/cv_template.html');
-  const coverUrl = chrome.runtime.getURL('assets/cover_template.html');
+  try {
+    const cvUrl = chrome.runtime.getURL('assets/cv_template.html');
+    const coverUrl = chrome.runtime.getURL('assets/cover_template.html');
 
-  const [cvResp, coverResp] = await Promise.all([fetch(cvUrl), fetch(coverUrl)]);
-  cvTemplate = await cvResp.text();
-  coverTemplate = await coverResp.text();
+    const [cvResp, coverResp] = await Promise.all([fetch(cvUrl), fetch(coverUrl)]);
+
+    if (cvResp.ok) cvTemplate = await cvResp.text();
+    else console.warn(`Failed to load CV template: ${cvResp.status}`);
+
+    if (coverResp.ok) coverTemplate = await coverResp.text();
+    else console.warn(`Failed to load cover template: ${coverResp.status}`);
+  } catch (err) {
+    console.warn('Failed to load templates:', err);
+  }
 }
 
 const SEP = '<span class="sep">|</span>';

@@ -17,7 +17,7 @@ const cache = new AnswerCache();
 // ── Settings Management ──
 
 async function getSettings(): Promise<Settings> {
-  const data = await chrome.storage.sync.get('settings');
+  const data = await chrome.storage.local.get('settings');
   return { ...DEFAULT_SETTINGS, ...data.settings };
 }
 

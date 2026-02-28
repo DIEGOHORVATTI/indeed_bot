@@ -362,94 +362,139 @@ def _upload_resume_via_api(frame, page, cv_pdf_path, logger) -> bool:
         return False
 
 
-def _handle_resume_step(ctx, page, cv_pdf_path, cover_pdf_path, logger) -> None:
+def _handle_resume_step(ctx, page, cv_pdf_path, _cover_pdf_path=None, logger=None) -> None:
     """Handle the resume upload/selection step of the wizard.
 
     Strategy order:
-    1. Direct file input (hidden or visible) in the smartapply frame
-    2. Click through SPA UI to reveal file input (resume options > upload)
+    1. Click through SPA UI to reveal file input (most reliable for Indeed wizard)
+    2. Direct file input (hidden or visible) targeting resume-specific inputs
     3. API-based upload via smartapply /api/v1/files
     4. Fall back to selecting existing resume card
     """
     if not cv_pdf_path:
-        # No custom CV to upload — just proceed with whatever resume is already selected
         return
 
     uploaded = False
 
-    # Strategy 1: Look for file input directly (some forms have it hidden)
-    try:
-        file_inputs = ctx.query_selector_all('input[type="file"]')
-        for fi in file_inputs:
-            try:
-                accept = (fi.get_attribute("accept") or "").lower()
-                # Skip non-resume file inputs (e.g. cover letter specific ones)
-                if "image" in accept:
-                    continue
-                fi.set_input_files(cv_pdf_path)
-                time.sleep(2)
-                uploaded = True
-                logger.info(f"Uploaded CV via direct file input: {cv_pdf_path}")
-                break
-            except Exception:
-                continue
-    except Exception:
-        pass
-
-    # Strategy 2: Click through the SPA UI to reveal upload option
+    # Strategy 1: Click through the SPA UI to reveal upload option (most reliable)
     if not uploaded:
         try:
             # Look for "resume options" / "opções de currículo" dropdown/button
             options_btn = find_first(ctx, [
                 'button:visible:has-text("opções de currículo")',
+                'button:visible:has-text("Opções de currículo")',
                 'button:visible:has-text("Resume options")',
                 'button:visible:has-text("resume options")',
                 'button:visible:has-text("Opções")',
                 'button:visible:has-text("Options")',
-                '[data-testid*="resume"] button:visible',
-                '[data-testid*="Resume"] button:visible',
-                '[aria-label*="resume" i] button:visible',
+                'button:visible:has-text("Alterar currículo")',
+                'button:visible:has-text("Change resume")',
                 'button:visible:has-text("Change")',
                 'button:visible:has-text("Alterar")',
+                'button:visible:has-text("Substituir")',
+                'button:visible:has-text("Replace")',
+                '[data-testid*="resume"] button:visible',
+                '[data-testid*="Resume"] button:visible',
+                '[data-testid*="resumeOptions"] :visible',
+                '[aria-label*="resume" i] button:visible',
+                '[aria-label*="currículo" i] button:visible',
             ], logger=logger, desc="resume options button")
 
             if options_btn:
                 options_btn.click()
-                time.sleep(1)
+                time.sleep(1.5)
 
                 # Now look for "upload a different file" / "carregar um arquivo diferente"
                 upload_btn = find_first(ctx, [
                     'button:visible:has-text("carregar um arquivo diferente")',
+                    'button:visible:has-text("Carregar um arquivo diferente")',
                     'button:visible:has-text("Upload a different file")',
                     'button:visible:has-text("upload a different")',
+                    'button:visible:has-text("Carregar arquivo")',
                     'button:visible:has-text("Carregar")',
+                    'button:visible:has-text("Upload file")',
                     'button:visible:has-text("Upload")',
+                    'a:visible:has-text("carregar um arquivo")',
                     'a:visible:has-text("carregar")',
                     'a:visible:has-text("Upload")',
                     'a:visible:has-text("upload")',
                     '[data-testid*="upload" i]',
                     '[data-testid="ResumeUploadButton"]',
+                    '[data-testid*="UploadResume"]',
+                    'input[type="file"]',
                 ], logger=logger, desc="upload file button")
 
                 if upload_btn:
-                    upload_btn.click()
-                    time.sleep(1)
+                    tag = (upload_btn.evaluate("el => el.tagName") or "").lower()
+                    if tag == "input":
+                        # Found file input directly
+                        upload_btn.set_input_files(cv_pdf_path)
+                    else:
+                        upload_btn.click()
+                        time.sleep(1)
+                        # Now look for the file input that should have appeared
+                        file_input = find_first(ctx, ['input[type="file"]'], logger=logger, desc="file input after UI click")
+                        if file_input:
+                            file_input.set_input_files(cv_pdf_path)
 
-                    # Now look for the file input that should have appeared
-                    file_input = find_first(ctx, ['input[type="file"]'], logger=logger, desc="file input after UI click")
-                    if file_input:
-                        file_input.set_input_files(cv_pdf_path)
-                        time.sleep(2)
-                        uploaded = True
-                        logger.info(f"Uploaded CV via SPA UI flow: {cv_pdf_path}")
+                    time.sleep(2)
+                    uploaded = True
+                    logger.info(f"✓ Uploaded CV via SPA UI flow: {cv_pdf_path}")
         except Exception as e:
             logger.debug(f"SPA UI resume upload failed: {e}")
+
+    # Strategy 2: Look for resume-specific file input directly
+    if not uploaded:
+        try:
+            # Target resume-specific file inputs (avoid cover letter inputs)
+            resume_file_selectors = [
+                '[data-testid*="resume" i] input[type="file"]',
+                '[data-testid*="Resume"] input[type="file"]',
+                '[class*="resume" i] input[type="file"]',
+                '[class*="Resume"] input[type="file"]',
+                '[aria-label*="resume" i] input[type="file"]',
+                '[aria-label*="currículo" i] input[type="file"]',
+            ]
+            resume_input = find_first(ctx, resume_file_selectors, logger=logger, desc="resume file input")
+            if resume_input:
+                resume_input.set_input_files(cv_pdf_path)
+                time.sleep(2)
+                uploaded = True
+                logger.info(f"✓ Uploaded CV via resume-specific file input: {cv_pdf_path}")
+
+            if not uploaded:
+                # Fallback: any file input that accepts PDFs (skip image/cover letter inputs)
+                file_inputs = ctx.query_selector_all('input[type="file"]')
+                for fi in file_inputs:
+                    try:
+                        accept = (fi.get_attribute("accept") or "").lower()
+                        name = (fi.get_attribute("name") or "").lower()
+                        aria = (fi.get_attribute("aria-label") or "").lower()
+                        testid = (fi.get_attribute("data-testid") or "").lower()
+                        # Skip non-resume file inputs
+                        if "image" in accept:
+                            continue
+                        if "cover" in name or "cover" in aria or "cover" in testid:
+                            continue
+                        if "carta" in name or "carta" in aria or "carta" in testid:
+                            continue
+                        fi.set_input_files(cv_pdf_path)
+                        time.sleep(2)
+                        uploaded = True
+                        logger.info(f"✓ Uploaded CV via generic file input: {cv_pdf_path}")
+                        break
+                    except Exception:
+                        continue
+        except Exception:
+            pass
 
     # Strategy 3: API-based upload via fetch inside the frame
     if not uploaded and hasattr(ctx, "url") and "smartapply.indeed.com" in (ctx.url or ""):
         uploaded = _upload_resume_via_api(ctx, page, cv_pdf_path, logger)
+        if uploaded:
+            logger.info(f"✓ Uploaded CV via API: {cv_pdf_path}")
 
-    # Strategy 4: Try to select existing resume card (old Indeed UI fallback)
+    # Strategy 4: Try to select existing resume card (last resort)
     if not uploaded:
         resume_selectors = [
             '[data-testid="FileResumeCardHeader-title"]',
@@ -470,39 +515,90 @@ def _handle_resume_step(ctx, page, cv_pdf_path, cover_pdf_path, logger) -> None:
                         parent.click()
                 except Exception:
                     pass
-        logger.info("Using default/existing resume (no custom upload succeeded)")
+        logger.warning("⚠ Using default/existing resume (custom upload failed)")
 
     time.sleep(1)
 
-    # Try to upload cover letter
-    if cover_pdf_path:
-        _upload_cover_letter(ctx, cover_pdf_path, logger)
+
+def _has_cover_letter_field(ctx, logger) -> bool:
+    """Check if the current wizard step has a cover letter upload field."""
+    cover_selectors = [
+        '[data-testid="CoverLetterInput"]',
+        '[data-testid*="coverLetter" i]',
+        '[data-testid*="cover-letter" i]',
+        '[class*="CoverLetter"]',
+        '[class*="cover-letter"]',
+        'label:visible:has-text("cover letter")',
+        'label:visible:has-text("carta de apresentação")',
+        'label:visible:has-text("Carta de apresentação")',
+        'label:visible:has-text("Carta de Apresentação")',
+        'span:visible:has-text("cover letter")',
+        'span:visible:has-text("carta de apresentação")',
+        'h3:visible:has-text("cover letter")',
+        'h3:visible:has-text("carta de apresentação")',
+        'button:visible:has-text("cover letter")',
+        'button:visible:has-text("carta de apresentação")',
+        'button:visible:has-text("Add cover letter")',
+        'button:visible:has-text("Adicionar carta")',
+        'a:visible:has-text("cover letter")',
+        'a:visible:has-text("carta de apresentação")',
+        'input[type="file"][name*="cover" i]',
+        'input[type="file"][aria-label*="cover" i]',
+        'input[type="file"][aria-label*="carta" i]',
+    ]
+    el = find_first(ctx, cover_selectors, logger=logger, desc="cover letter field")
+    return el is not None
 
 
 def _upload_cover_letter(ctx, cover_pdf_path: str, logger) -> None:
     """Try to upload a cover letter in the wizard."""
     try:
+        # First try to find a direct file input for cover letter
         cover_input = find_first(ctx, [
             '[data-testid="CoverLetterInput"] input[type="file"]',
+            '[data-testid*="coverLetter" i] input[type="file"]',
+            '[data-testid*="cover-letter" i] input[type="file"]',
+            '[class*="CoverLetter"] input[type="file"]',
+            'input[type="file"][name*="cover" i]',
+            'input[type="file"][aria-label*="cover" i]',
+            'input[type="file"][aria-label*="carta" i]',
             'input[accept*="pdf"][name*="cover"]',
-        ], logger=logger, desc="cover letter upload")
+        ], logger=logger, desc="cover letter file input")
+
         if not cover_input:
+            # Try clicking a button to reveal the file input
             cover_btn = find_first(ctx, [
+                'button:visible:has-text("Add cover letter")',
+                'button:visible:has-text("Adicionar carta")',
+                'button:visible:has-text("Adicionar carta de apresentação")',
+                'button:visible:has-text("Upload cover letter")',
+                'button:visible:has-text("Enviar carta")',
                 'button:visible:has-text("cover letter")',
-                'button:visible:has-text("carta")',
                 'button:visible:has-text("carta de apresentação")',
+                'a:visible:has-text("Add cover letter")',
+                'a:visible:has-text("Adicionar carta")',
                 'a:visible:has-text("cover letter")',
                 'a:visible:has-text("carta de apresentação")',
                 'a:visible:has-text("carta")',
+                '[data-testid*="coverLetter" i] button:visible',
+                '[data-testid*="cover-letter" i] button:visible',
             ], logger=logger, desc="cover letter button")
             if cover_btn:
                 cover_btn.click()
-                time.sleep(1)
-                cover_input = find_first(ctx, ['input[type="file"]'], logger=logger, desc="cover letter file input")
+                time.sleep(1.5)
+                cover_input = find_first(ctx, [
+                    '[data-testid*="coverLetter" i] input[type="file"]',
+                    '[data-testid*="cover-letter" i] input[type="file"]',
+                    '[class*="CoverLetter"] input[type="file"]',
+                    'input[type="file"]',
+                ], logger=logger, desc="cover letter file input after click")
+
         if cover_input:
             cover_input.set_input_files(cover_pdf_path)
             time.sleep(2)
-            logger.info(f"Uploaded cover letter: {cover_pdf_path}")
+            logger.info(f"✓ Uploaded cover letter: {cover_pdf_path}")
+        else:
+            logger.debug("Cover letter field not found on this step")
     except Exception as e:
         logger.debug(f"Cover letter upload not available: {e}")
 
@@ -995,7 +1091,7 @@ def apply_to_job(browser, job_url: str, language: Optional[str], logger, persona
 
     page = browser.new_page()
     cv_pdf_path = None
-    cover_pdf_path = None
+    cover_pdf_path = None  # generated lazily if cover letter field detected
     try:
         page.goto(job_url, wait_until="domcontentloaded")
         _wait_for_page_ready(page, timeout_ms=10000)
@@ -1014,7 +1110,8 @@ def apply_to_job(browser, job_url: str, language: Optional[str], logger, persona
         except Exception:
             _current_job_title = ""
 
-        # --- Personalization: scrape job and generate tailored PDFs ---
+        # --- Personalization: scrape job and generate tailored CV ---
+        job_info = None
         if personalization_config and personalization_config.enabled:
             try:
                 from app.services.cv_generator import scrape_job_description
@@ -1023,13 +1120,14 @@ def apply_to_job(browser, job_url: str, language: Optional[str], logger, persona
                 if job_info.get("description"):
                     logger.info(f"Generating tailored CV for: {job_info.get('title', '?')} at {job_info.get('company', '?')}")
                     profile_dict = profile_config.model_dump() if profile_config else None
-                    cv_pdf_path, cover_pdf_path = generate_pdfs_for_job(
+                    cv_pdf_path, _ = generate_pdfs_for_job(
                         job_info,
                         base_cv_path=personalization_config.base_cv_path,
                         base_cover_path=personalization_config.base_cover_letter_path,
                         claude_cli_path=personalization_config.claude_cli_path,
                         output_dir=personalization_config.output_dir,
                         profile=profile_dict,
+                        include_cover=False,  # Cover letter generated lazily if field exists
                     )
                     logger.info(f"Tailored CV saved: {cv_pdf_path}")
                 else:
@@ -1037,7 +1135,7 @@ def apply_to_job(browser, job_url: str, language: Optional[str], logger, persona
             except Exception as e:
                 logger.warning(f"CV generation failed, using default resume: {e}")
                 cv_pdf_path = None
-                cover_pdf_path = None
+                job_info = None
 
         # --- Click the Apply button ---
         apply_result = _find_apply_button(page, logger)
@@ -1090,6 +1188,7 @@ def apply_to_job(browser, job_url: str, language: Optional[str], logger, persona
         max_steps = 10
         step = 0
         submitted = False
+        cover_pdf_generated = False
         while step < max_steps:
             if time.time() - start_time > 60:
                 logger.warning(f"Timeout applying to {job_url}")
@@ -1099,8 +1198,24 @@ def apply_to_job(browser, job_url: str, language: Optional[str], logger, persona
             # Re-check iframe context on each step (wizard may change frames)
             ctx = _handle_iframe_context(page, logger)
 
-            # Handle resume step
-            _handle_resume_step(ctx, page, cv_pdf_path, cover_pdf_path, logger)
+            # Handle resume step (upload custom CV)
+            _handle_resume_step(ctx, page, cv_pdf_path, None, logger)
+
+            # Handle cover letter: only generate PDF if field exists in wizard
+            if not cover_pdf_generated and job_info and personalization_config and personalization_config.enabled:
+                if _has_cover_letter_field(ctx, logger):
+                    try:
+                        from app.services.pdf import generate_cover_pdf_for_job
+                        cover_pdf_path = generate_cover_pdf_for_job(
+                            job_info,
+                            output_dir=personalization_config.output_dir,
+                        )
+                        if cover_pdf_path:
+                            logger.info(f"Cover letter field detected, generating PDF: {cover_pdf_path}")
+                            _upload_cover_letter(ctx, cover_pdf_path, logger)
+                            cover_pdf_generated = True
+                    except Exception as e:
+                        logger.debug(f"Cover letter generation/upload failed: {e}")
 
             # Handle questionnaire fields
             _handle_questionnaire(ctx, logger)

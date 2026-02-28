@@ -27,7 +27,7 @@ const fields = {
 // ── Load Settings ──
 
 async function loadSettings(): Promise<void> {
-  const data = await chrome.storage.sync.get('settings');
+  const data = await chrome.storage.local.get('settings');
   const s: Settings = { ...DEFAULT_SETTINGS, ...data.settings };
 
   fields.searchUrls.value = s.searchUrls.join('\n');
@@ -50,7 +50,7 @@ async function loadSettings(): Promise<void> {
 
 async function saveSettings(): Promise<void> {
   // Preserve backendUrl from existing settings (hidden from UI)
-  const existing = await chrome.storage.sync.get('settings');
+  const existing = await chrome.storage.local.get('settings');
   const backendUrl = existing.settings?.backendUrl || DEFAULT_SETTINGS.backendUrl;
 
   const settings: Settings = {
@@ -75,7 +75,7 @@ async function saveSettings(): Promise<void> {
     },
   };
 
-  await chrome.storage.sync.set({ settings });
+  await chrome.storage.local.set({ settings });
 
   // Show saved message
   const msg = document.getElementById('saved-msg')!;

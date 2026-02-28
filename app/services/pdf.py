@@ -192,6 +192,14 @@ def html_to_pdf(html_content: str, output_path: str) -> str:
     return output_path
 
 
+def _job_file_prefix(job_info: dict) -> str:
+    """Generate a file name prefix from job info."""
+    job_hash = hashlib.md5(job_info.get("url", str(time.time())).encode()).hexdigest()[:8]
+    company = (job_info.get("company", "unknown") or "unknown").replace(" ", "_").replace("/", "_")[:30]
+    title = (job_info.get("title", "job") or "job").replace(" ", "_").replace("/", "_")[:30]
+    return f"{company}_{title}_{job_hash}"
+
+
 def generate_pdfs_for_job(
     job_info: dict,
     base_cv_path: str = "assets/base_cv.md",
@@ -199,25 +207,60 @@ def generate_pdfs_for_job(
     claude_cli_path: str = "claude",
     output_dir: str = "output",
     profile: dict | None = None,
-) -> Tuple[str, str]:
-    """Generate tailored CV and cover letter PDFs for a specific job."""
+    include_cover: bool = False,
+) -> Tuple[str, str | None]:
+    """Generate tailored CV (and optionally cover letter) PDFs for a specific job.
+
+    When include_cover=False, only the CV PDF is generated. The cover letter
+    can be generated later via generate_cover_pdf_for_job() using cached content.
+    """
     from .cv_generator import generate_tailored_content
 
     os.makedirs(output_dir, exist_ok=True)
 
-    job_hash = hashlib.md5(job_info.get("url", str(time.time())).encode()).hexdigest()[:8]
-    company = (job_info.get("company", "unknown") or "unknown").replace(" ", "_").replace("/", "_")[:30]
-    title = (job_info.get("title", "job") or "job").replace(" ", "_").replace("/", "_")[:30]
-    prefix = f"{company}_{title}_{job_hash}"
-
+    prefix = _job_file_prefix(job_info)
     cv_pdf_path = os.path.join(output_dir, f"cv_{prefix}.pdf")
-    cover_pdf_path = os.path.join(output_dir, f"cover_{prefix}.pdf")
 
     cv_html, cover_html = generate_tailored_content(
         job_info, base_cv_path, base_cover_path, claude_cli_path, profile=profile
     )
 
     html_to_pdf(cv_html, cv_pdf_path)
-    html_to_pdf(cover_html, cover_pdf_path)
+
+    # Cache cover HTML for lazy generation
+    cover_cache_path = os.path.join(output_dir, f".cover_html_{prefix}.html")
+    with open(cover_cache_path, "w", encoding="utf-8") as f:
+        f.write(cover_html)
+
+    cover_pdf_path = None
+    if include_cover:
+        cover_pdf_path = os.path.join(output_dir, f"cover_{prefix}.pdf")
+        html_to_pdf(cover_html, cover_pdf_path)
 
     return cv_pdf_path, cover_pdf_path
+
+
+def generate_cover_pdf_for_job(
+    job_info: dict,
+    output_dir: str = "output",
+) -> str | None:
+    """Generate cover letter PDF from cached HTML content.
+
+    This is called lazily when the wizard detects a cover letter field.
+    Returns the PDF path or None if no cached content exists.
+    """
+    prefix = _job_file_prefix(job_info)
+    cover_cache_path = os.path.join(output_dir, f".cover_html_{prefix}.html")
+    cover_pdf_path = os.path.join(output_dir, f"cover_{prefix}.pdf")
+
+    # Already generated
+    if os.path.exists(cover_pdf_path):
+        return cover_pdf_path
+
+    # Generate from cached HTML
+    if os.path.exists(cover_cache_path):
+        cover_html = open(cover_cache_path, encoding="utf-8").read()
+        html_to_pdf(cover_html, cover_pdf_path)
+        return cover_pdf_path
+
+    return None

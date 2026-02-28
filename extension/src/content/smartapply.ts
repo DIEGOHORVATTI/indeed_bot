@@ -47,7 +47,43 @@ const LEVEL_SALARY: [string[], string][] = [
 
 const DEFAULT_SALARY = '9000';
 
+// Fields that can be answered from job context
+const JOB_TITLE_KEYWORDS = [
+  'cargo pretendido', 'cargo desejado', 'vaga pretendida', 'posição desejada',
+  'posição pretendida', 'função pretendida', 'função desejada',
+  'desired position', 'desired job', 'job title', 'position applied',
+];
+
+const NAME_KEYWORDS = [
+  'nome completo', 'nome', 'full name', 'name', 'seu nome',
+];
+
+const EMAIL_KEYWORDS = [
+  'e-mail', 'email', 'endereço de email', 'email address',
+];
+
+const PHONE_KEYWORDS = [
+  'telefone', 'celular', 'phone', 'mobile', 'whatsapp', 'número de telefone',
+];
+
+const CITY_KEYWORDS = [
+  'cidade', 'city', 'localização', 'location', 'onde mora', 'where',
+];
+
+const LINKEDIN_KEYWORDS = [
+  'linkedin', 'perfil linkedin', 'linkedin profile', 'url linkedin',
+];
+
+const GITHUB_KEYWORDS = [
+  'github', 'perfil github', 'github profile', 'url github', 'repositório',
+];
+
+const PORTFOLIO_KEYWORDS = [
+  'portfolio', 'portfólio', 'website', 'site pessoal', 'personal website',
+];
+
 let currentJobTitle = '';
+let currentProfile: { name?: string; email?: string; phone?: string; location?: string; linkedin?: string; github?: string; portfolio?: string } = {};
 
 function detectSalary(jobTitle: string): string {
   const lower = jobTitle.toLowerCase();
@@ -84,6 +120,34 @@ function matchDefaultAnswer(label: string, options?: string[]): string | null {
   // Salary → based on job level
   if (SALARY_KEYWORDS.some(kw => lower.includes(kw))) {
     return detectSalary(currentJobTitle);
+  }
+
+  // Job title / desired position → use the current job title
+  if (JOB_TITLE_KEYWORDS.some(kw => lower.includes(kw)) && currentJobTitle) {
+    return currentJobTitle;
+  }
+
+  // Profile-based fields
+  if (NAME_KEYWORDS.some(kw => lower.includes(kw)) && currentProfile.name) {
+    return currentProfile.name;
+  }
+  if (EMAIL_KEYWORDS.some(kw => lower === kw || lower.includes(kw)) && currentProfile.email) {
+    return currentProfile.email;
+  }
+  if (PHONE_KEYWORDS.some(kw => lower.includes(kw)) && currentProfile.phone) {
+    return currentProfile.phone;
+  }
+  if (CITY_KEYWORDS.some(kw => lower.includes(kw)) && currentProfile.location) {
+    return currentProfile.location;
+  }
+  if (LINKEDIN_KEYWORDS.some(kw => lower.includes(kw)) && currentProfile.linkedin) {
+    return currentProfile.linkedin;
+  }
+  if (GITHUB_KEYWORDS.some(kw => lower.includes(kw)) && currentProfile.github) {
+    return currentProfile.github;
+  }
+  if (PORTFOLIO_KEYWORDS.some(kw => lower.includes(kw)) && currentProfile.portfolio) {
+    return currentProfile.portfolio;
   }
 
   return null;
@@ -269,7 +333,12 @@ async function handleQuestionnaire(): Promise<{ needsUserInput: boolean; fieldLa
       fillInput(inp, answer);
       await cacheStore(label, inputType, answer);
     } else {
-      return { needsUserInput: true, fieldLabel: label };
+      // Skip non-required fields instead of blocking
+      const isRequired = inp.required || inp.getAttribute('aria-required') === 'true' || label.includes('*');
+      if (isRequired) {
+        return { needsUserInput: true, fieldLabel: label };
+      }
+      // Non-required: leave blank and continue
     }
   }
 
@@ -293,7 +362,10 @@ async function handleQuestionnaire(): Promise<{ needsUserInput: boolean; fieldLa
       fillInput(ta, answer);
       await cacheStore(label, 'textarea', answer);
     } else {
-      return { needsUserInput: true, fieldLabel: label };
+      const isRequired = ta.required || ta.getAttribute('aria-required') === 'true' || label.includes('*');
+      if (isRequired) {
+        return { needsUserInput: true, fieldLabel: label };
+      }
     }
   }
 
@@ -465,8 +537,9 @@ function clickContinueOrSubmit(): 'submitted' | 'continued' | 'none' {
 chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) => {
   switch (message.type) {
     case 'FILL_AND_ADVANCE': {
-      const { cvData, cvFilename, coverData, coverFilename, jobTitle } = message.payload || {};
+      const { cvData, cvFilename, coverData, coverFilename, jobTitle, profile } = message.payload || {};
       currentJobTitle = jobTitle || '';
+      if (profile) currentProfile = profile;
 
       // Handle resume upload
       handleResumeStep(cvData, cvFilename);
