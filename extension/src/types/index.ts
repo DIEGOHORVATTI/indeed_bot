@@ -162,7 +162,8 @@ export type MessageType =
   | 'START_BOT'
   | 'STOP_BOT'
   | 'PAUSE_BOT'
-  | 'RESUME_BOT';
+  | 'RESUME_BOT'
+  | 'ADD_LOG';
 
 export interface Message {
   type: MessageType;

@@ -9,6 +9,8 @@ import { Message } from '../types';
 import {
   findFirst, findAll, clickFirst, isVisible, isDisabled,
   fillInput, selectOption, setInputFiles, getLabelForInput, verifyUploadAccepted,
+  getInputConstraints, validateAnswer, detectValidationError,
+  InputConstraints,
 } from '../utils/selectors';
 import {
   SUBMIT_SELECTORS, CONTINUE_SELECTORS,
@@ -24,8 +26,13 @@ let currentBaseProfile = '';
 
 // ── Helpers ──
 
-function log(msg: string): void {
+function log(msg: string, level: 'info' | 'warning' | 'error' = 'info'): void {
   console.log(`[smartapply] ${msg}`);
+  // Send to Activity Log in the popup UI (fire-and-forget)
+  chrome.runtime.sendMessage({
+    type: 'ADD_LOG',
+    payload: { level, message: `[wizard] ${msg}` },
+  }).catch(() => {});
 }
 
 function waitMs(ms: number): Promise<void> {
@@ -34,15 +41,38 @@ function waitMs(ms: number): Promise<void> {
 
 // ── Ask Claude (via service worker → backend) ──
 
-async function askClaude(question: string, options?: string[]): Promise<string | null> {
+async function askClaude(
+  question: string,
+  options?: string[],
+  constraints?: Partial<InputConstraints>,
+  errorContext?: string
+): Promise<string | null> {
+  log(`🤖 AI Question: "${question}"${options ? ` [options: ${options.join(', ')}]` : ''}${constraints ? ` [constraints: ${JSON.stringify(constraints)}]` : ''}${errorContext ? ` [retry: ${errorContext}]` : ''}`);
+
   return new Promise(resolve => {
     chrome.runtime.sendMessage(
       {
         type: 'ASK_CLAUDE',
-        payload: { question, options, jobTitle: currentJobTitle, baseProfile: currentBaseProfile },
+        payload: {
+          question,
+          options,
+          jobTitle: currentJobTitle,
+          baseProfile: currentBaseProfile,
+          constraints: constraints ? {
+            type: constraints.type,
+            maxLength: constraints.maxLength,
+            minLength: constraints.minLength,
+            min: constraints.min,
+            max: constraints.max,
+            pattern: constraints.pattern,
+          } : undefined,
+          errorContext,
+        },
       },
       (response) => {
-        resolve(response?.payload?.answer || null);
+        const answer = response?.payload?.answer || null;
+        log(`🤖 AI Answer: "${answer}" (for: "${question}")`);
+        resolve(answer);
       }
     );
   });
@@ -64,131 +94,163 @@ async function waitForFileInput(timeoutMs = 3000): Promise<HTMLInputElement | nu
   return null;
 }
 
+/** Find the resume file input (tries both new and old data-testid patterns). */
+function findResumeFileInput(): HTMLInputElement | null {
+  return document.querySelector<HTMLInputElement>(
+    '[data-testid="resume-selection-file-resume-upload-radio-card-file-input"], ' +
+    '[data-testid="resume-selection-file-resume-radio-card-file-input"]'
+  );
+}
+
+/** Check if there's already a CV loaded (ResumeOptionsMenu visible = existing CV). */
+function hasExistingResume(): boolean {
+  return !!document.querySelector('[data-testid="ResumeOptionsMenu"]');
+}
+
+/**
+ * When a CV is already loaded, reset the component via "Opções de currículo" → "Carregar um arquivo diferente".
+ * This transitions the UI from "file loaded" state back to "upload" state with an active file input.
+ * Returns the fresh file input element, or null if reset failed.
+ */
+async function resetResumeForNewUpload(): Promise<HTMLInputElement | null> {
+  const optionsMenuBtn = document.querySelector<HTMLButtonElement>(
+    '[data-testid="ResumeOptionsMenu"]'
+  );
+  if (!optionsMenuBtn) return null;
+
+  log('Resume: existing CV detected, clicking ResumeOptionsMenu to replace');
+  optionsMenuBtn.click();
+  await waitMs(800);
+
+  const uploadMenuBtn = document.querySelector<HTMLButtonElement>(
+    '[data-testid="ResumeOptionsMenu-upload"]'
+  );
+  if (!uploadMenuBtn) {
+    log('Resume: ResumeOptionsMenu-upload button not found');
+    return null;
+  }
+
+  // Intercept file input click to prevent native file dialog from opening
+  const existingInput = findResumeFileInput();
+  if (existingInput) {
+    const interceptClick = (e: Event) => {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    };
+    existingInput.addEventListener('click', interceptClick, { once: true, capture: true });
+
+    log('Resume: clicking "Carregar um arquivo diferente" (with click interceptor)');
+    uploadMenuBtn.click();
+    await waitMs(1000);
+
+    existingInput.removeEventListener('click', interceptClick, { capture: true } as any);
+  } else {
+    uploadMenuBtn.click();
+    await waitMs(1000);
+  }
+
+  // After reset, the component re-renders with a fresh file input (possibly new testid).
+  const deadline = Date.now() + 3000;
+  while (Date.now() < deadline) {
+    const freshInput = findResumeFileInput();
+    if (freshInput) {
+      log('Resume: component reset, fresh file input ready');
+      return freshInput;
+    }
+    await waitMs(300);
+  }
+
+  log('Resume: no file input found after reset');
+  return null;
+}
+
 async function tryResumeSelectionUpload(file: File): Promise<boolean> {
   // Step 1: Ensure the "file resume" radio card is selected
   const fileRadio = document.querySelector<HTMLInputElement>(
     '[data-testid="resume-selection-file-resume-upload-radio-card-input"], [data-testid="resume-selection-file-resume-radio-card-input"]'
   );
   if (fileRadio && !fileRadio.checked) {
-    log('Resume selection: selecting file resume radio card');
+    log('Resume: selecting file resume radio card');
     fileRadio.click();
     await waitMs(500);
   }
 
-  // Step 2: Find the file input
-  const fileInput = document.querySelector<HTMLInputElement>(
-    '[data-testid="resume-selection-file-resume-upload-radio-card-file-input"], [data-testid="resume-selection-file-resume-radio-card-file-input"]'
-  );
+  log(`Resume: attempting upload of "${file.name}" (${file.size} bytes)`);
 
-  if (!fileInput) {
-    log('Resume selection: file input not found via data-testid');
-    return false;
-  }
-
-  log(`Resume selection: found file input, attempting upload of "${file.name}" (${file.size} bytes)`);
-
-  // Step 3: Intercept native file dialog and set files programmatically
-  // The React component listens for 'change' on this input.
-  // We prevent the native dialog from opening by intercepting the click,
-  // then set files and dispatch the change event.
-
-  // First, try the direct approach: set files and dispatch change
-  setInputFiles(fileInput, file);
-  await waitMs(1000);
-  if (await verifyUploadAccepted(3000, file.name)) {
-    log('Resume selection: direct setInputFiles worked');
-    return true;
-  }
-
-  // Step 4: Try clicking "Opções de currículo" → "Carregar um arquivo diferente"
-  // This resets the form and opens a new file picker.
-  // We intercept the click on the file input to prevent the native dialog.
-  const optionsMenuBtn = document.querySelector<HTMLButtonElement>(
-    '[data-testid="ResumeOptionsMenu"]'
-  );
-  if (optionsMenuBtn) {
-    log('Resume selection: opening ResumeOptionsMenu');
-    optionsMenuBtn.click();
-    await waitMs(800);
-
-    const uploadMenuBtn = document.querySelector<HTMLButtonElement>(
-      '[data-testid="ResumeOptionsMenu-upload"]'
-    );
-    if (uploadMenuBtn) {
-      // Intercept the file input click to prevent native dialog from opening
-      const interceptClick = (e: Event) => {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-      };
-      fileInput.addEventListener('click', interceptClick, { once: true, capture: true });
-
-      log('Resume selection: clicking ResumeOptionsMenu-upload (with click interceptor)');
-      uploadMenuBtn.click();
-      await waitMs(500);
-
-      // Remove interceptor in case it wasn't triggered
-      fileInput.removeEventListener('click', interceptClick, { capture: true } as any);
-
-      // Now set the files on the (possibly reset) input
-      // Re-query in case the DOM changed
-      const freshInput = document.querySelector<HTMLInputElement>(
-        '[data-testid="resume-selection-file-resume-radio-card-file-input"]'
-      ) || fileInput;
-
+  // Step 2: If there's already a CV loaded, we MUST reset the component first.
+  // BUG FIX: Direct setInputFiles on a hidden input sets input.files on the DOM
+  // but React ignores the change — verifyUploadAccepted falsely returns true
+  // (because it checks input.files) while Indeed keeps the OLD CV.
+  if (hasExistingResume()) {
+    log('Resume: existing CV loaded, must reset before uploading new one');
+    const freshInput = await resetResumeForNewUpload();
+    if (freshInput) {
       setInputFiles(freshInput, file);
-      await waitMs(1000);
+      await waitMs(1500);
       if (await verifyUploadAccepted(5000, file.name)) {
-        log('Resume selection: upload via menu approach worked');
+        log('Resume: upload via reset+setInputFiles worked');
+        return true;
+      }
+    }
+    // If reset approach didn't work, try the select-file button below
+  } else {
+    // No existing CV — direct upload on the visible file input
+    const fileInput = findResumeFileInput();
+    if (fileInput) {
+      setInputFiles(fileInput, file);
+      await waitMs(1000);
+      if (await verifyUploadAccepted(3000, file.name)) {
+        log('Resume: direct setInputFiles worked');
         return true;
       }
     }
   }
 
-  // Step 5: Try "Selecionar arquivo" button with click intercept
+  // Step 3: Try "Selecionar arquivo" button with click intercept
   const selectFileBtn = document.querySelector<HTMLButtonElement>(
     '[data-testid="resume-selection-file-resume-upload-radio-card-button"], [data-testid="resume-selection-file-resume-radio-card-button"]'
   );
   if (selectFileBtn) {
-    const interceptClick2 = (e: Event) => {
-      e.preventDefault();
-      e.stopImmediatePropagation();
-    };
-    fileInput.addEventListener('click', interceptClick2, { once: true, capture: true });
+    const currentInput = findResumeFileInput();
+    if (currentInput) {
+      const interceptClick = (e: Event) => {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+      };
+      currentInput.addEventListener('click', interceptClick, { once: true, capture: true });
 
-    log('Resume selection: clicking "Selecionar arquivo" with click interceptor');
-    selectFileBtn.click();
-    await waitMs(500);
+      log('Resume: clicking "Selecionar arquivo" with click interceptor');
+      selectFileBtn.click();
+      await waitMs(500);
 
-    fileInput.removeEventListener('click', interceptClick2, { capture: true } as any);
+      currentInput.removeEventListener('click', interceptClick, { capture: true } as any);
 
-    const freshInput2 = document.querySelector<HTMLInputElement>(
-      '[data-testid="resume-selection-file-resume-upload-radio-card-file-input"], [data-testid="resume-selection-file-resume-radio-card-file-input"]'
-    ) || fileInput;
-    setInputFiles(freshInput2, file);
-    await waitMs(1000);
-    if (await verifyUploadAccepted(5000, file.name)) {
-      log('Resume selection: upload via select file button worked');
-      return true;
+      const freshInput = findResumeFileInput() || currentInput;
+      setInputFiles(freshInput, file);
+      await waitMs(1000);
+      if (await verifyUploadAccepted(5000, file.name)) {
+        log('Resume: upload via select file button worked');
+        return true;
+      }
     }
   }
 
-  // Step 6: API upload as last resort
-  log('Resume selection: trying API upload');
+  // Step 4: API upload as last resort
+  log('Resume: trying API upload');
   const apiResult = await uploadResumeViaApi(file);
   if (apiResult) {
-    log('Resume selection: API upload succeeded, reloading page');
+    log('Resume: API upload succeeded, reloading page');
     window.location.reload();
     await waitMs(3000);
     return true;
   }
 
-  // Step 7: Fallback — find any non-image file input on the page
+  // Step 5: Fallback — find any non-image file input on the page
   const allFileInputs = document.querySelectorAll<HTMLInputElement>('input[type="file"]');
   for (const fi of allFileInputs) {
-    if (fi === fileInput) continue;
     const accept = (fi.getAttribute('accept') || '').toLowerCase();
     if (accept.includes('image')) continue;
-    log('Resume selection: fallback — setting files on other file input');
+    log('Resume: fallback — setting files on other file input');
     setInputFiles(fi, file);
     if (await verifyUploadAccepted(3000, file.name)) return true;
   }
@@ -196,8 +258,9 @@ async function tryResumeSelectionUpload(file: File): Promise<boolean> {
   return false;
 }
 
-async function handleResumeStep(pdfData?: ArrayBuffer, pdfFilename?: string): Promise<void> {
-  if (!pdfData || !pdfFilename) return;
+/** Returns true if the new CV was uploaded and confirmed, false otherwise. */
+async function handleResumeStep(pdfData?: ArrayBuffer, pdfFilename?: string): Promise<boolean> {
+  if (!pdfData || !pdfFilename) return false;
 
   const file = new File([pdfData], pdfFilename, { type: 'application/pdf' });
   log(`handleResumeStep: file="${pdfFilename}" size=${file.size} bytes (pdfData.byteLength=${pdfData.byteLength})`);
@@ -210,7 +273,7 @@ async function handleResumeStep(pdfData?: ArrayBuffer, pdfFilename?: string): Pr
   if (isResumeSelectionPage) {
     log('Detected resume-selection page, using targeted approach');
     const uploaded = await tryResumeSelectionUpload(file);
-    if (uploaded) return;
+    if (uploaded) return true;
     log('Targeted approach failed, falling through to generic strategies');
   }
 
@@ -219,7 +282,7 @@ async function handleResumeStep(pdfData?: ArrayBuffer, pdfFilename?: string): Pr
   if (existingInput) {
     log('Strategy 1: found existing file input');
     setInputFiles(existingInput, file);
-    if (await verifyUploadAccepted(2000, pdfFilename)) return;
+    if (await verifyUploadAccepted(2000, pdfFilename)) return true;
   }
 
   // Strategy 2: Click "Resume options" → "Upload" → file input
@@ -237,7 +300,7 @@ async function handleResumeStep(pdfData?: ArrayBuffer, pdfFilename?: string): Pr
       if (fi) {
         log('Strategy 2: file input found');
         setInputFiles(fi, file);
-        if (await verifyUploadAccepted(2000, pdfFilename)) return;
+        if (await verifyUploadAccepted(2000, pdfFilename)) return true;
       }
     }
   }
@@ -251,7 +314,7 @@ async function handleResumeStep(pdfData?: ArrayBuffer, pdfFilename?: string): Pr
     if (fi) {
       log('Strategy 3: file input found');
       setInputFiles(fi, file);
-      if (await verifyUploadAccepted(2000, pdfFilename)) return;
+      if (await verifyUploadAccepted(2000, pdfFilename)) return true;
     }
   }
 
@@ -269,7 +332,7 @@ async function handleResumeStep(pdfData?: ArrayBuffer, pdfFilename?: string): Pr
       if (fi) {
         log('Strategy 4: file input found');
         setInputFiles(fi, file);
-        if (await verifyUploadAccepted(2000, pdfFilename)) return;
+        if (await verifyUploadAccepted(2000, pdfFilename)) return true;
       }
     }
   }
@@ -279,18 +342,19 @@ async function handleResumeStep(pdfData?: ArrayBuffer, pdfFilename?: string): Pr
   const apiResult = await uploadResumeViaApi(file);
   if (apiResult) {
     log('Strategy 5: API upload succeeded');
-    return;
+    return true;
   }
 
-  // Strategy 6: Select existing resume card
+  // Strategy 6: Select existing resume card (last resort — uses old CV, not new)
   const card = findFirst(RESUME_CARD_SELECTORS);
   if (card) {
-    log(`Strategy 6: clicking existing card`);
+    log('Strategy 6: clicking existing card (WARNING: using old CV, not the new dynamic one)', 'warning');
     (card as HTMLElement).click();
-    return;
+    return false;
   }
 
-  log('WARNING: No resume upload strategy worked');
+  log('WARNING: No resume upload strategy worked', 'warning');
+  return false;
 }
 
 async function uploadResumeViaApi(file: File): Promise<boolean> {
@@ -360,10 +424,10 @@ async function uploadResumeViaApi(file: File): Promise<boolean> {
       return true;
     }
 
-    log(`API upload failed: ${resp.status} ${resp.statusText}`);
+    log(`API upload failed: ${resp.status} ${resp.statusText}`, 'warning');
     return false;
   } catch (err) {
-    log(`API upload error: ${err}`);
+    log(`API upload error: ${err}`, 'error');
     return false;
   }
 }
@@ -417,15 +481,190 @@ async function handleCoverLetter(pdfData?: ArrayBuffer, pdfFilename?: string): P
     }
   }
 
-  log('WARNING: No cover letter upload strategy worked');
+  log('WARNING: No cover letter upload strategy worked', 'warning');
+}
+
+// ── Special Page Handling ──
+
+/** Handle known Indeed wizard pages that don't have standard form fields. */
+async function handleSpecialPages(): Promise<boolean> {
+  // Privacy settings: "Quer permitir que as empresas encontrem você?"
+  const privacyForm = document.querySelector('[data-testid="privacy-settings-form"]');
+  if (privacyForm) {
+    log('🔒 Special page: privacy-settings detected');
+    const optinRadio = document.querySelector<HTMLInputElement>('[data-testid="privacy-settings-optin-input"]');
+    if (optinRadio && !optinRadio.checked) {
+      optinRadio.click();
+      log('🔒 Clicked optin radio');
+      await waitMs(300);
+    }
+    const continueBtn = privacyForm.querySelector<HTMLButtonElement>('[data-testid="continue-button"]');
+    if (continueBtn) {
+      continueBtn.click();
+      log('🔒 Clicked continue on privacy-settings');
+      return true;
+    }
+  }
+
+  // Auto-check unchecked checkboxes that look like consent/agreement/opt-in
+  const checkboxes = document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+  for (const cb of checkboxes) {
+    if (!isVisible(cb) || cb.checked) continue;
+    const label = getLabelForInput(cb);
+    if (!label) continue;
+    const lower = label.toLowerCase();
+    // Auto-check consent, agreement, terms, notifications, privacy, allow
+    const autoCheckKeywords = [
+      'agree', 'aceito', 'concordo', 'consent', 'autorizo',
+      'allow', 'permitir', 'terms', 'termos', 'privacy',
+      'notification', 'notificaç', 'comunicaç',
+    ];
+    if (autoCheckKeywords.some(kw => lower.includes(kw))) {
+      cb.click();
+      log(`☑️ Auto-checked: "${label}"`);
+      await waitMs(200);
+    }
+  }
+
+  return false;
+}
+
+// ── DOM-based AI Fallback ──
+
+/** Extract a simplified version of the DOM for AI analysis. */
+function getSimplifiedDom(): string {
+  const MAX_LENGTH = 3000;
+  const parts: string[] = [];
+
+  // Page title/heading
+  const h1 = document.querySelector('h1');
+  if (h1) parts.push(`<h1>${h1.textContent?.trim()}</h1>`);
+
+  // Forms
+  const forms = document.querySelectorAll('form');
+  for (const form of forms) {
+    const testId = form.getAttribute('data-testid') || '';
+    parts.push(`<form data-testid="${testId}">`);
+
+    // Fieldsets with labels
+    const fieldsets = form.querySelectorAll('fieldset');
+    for (const fs of fieldsets) {
+      const role = fs.getAttribute('role') || '';
+      const fsTestId = fs.getAttribute('data-testid') || '';
+      parts.push(`  <fieldset role="${role}" data-testid="${fsTestId}">`);
+
+      const inputs = fs.querySelectorAll('input');
+      for (const inp of inputs) {
+        const type = inp.type;
+        const val = inp.value;
+        const checked = inp.checked ? ' checked' : '';
+        const tid = inp.getAttribute('data-testid') || '';
+        const lbl = getLabelForInput(inp);
+        parts.push(`    <input type="${type}" value="${val}"${checked} data-testid="${tid}" label="${lbl}"/>`);
+      }
+      parts.push('  </fieldset>');
+    }
+
+    // Standalone inputs
+    const standaloneInputs = form.querySelectorAll(':scope > input, :scope > div input');
+    for (const inp of standaloneInputs) {
+      if (inp.closest('fieldset')) continue;
+      const htmlInp = inp as HTMLInputElement;
+      const lbl = getLabelForInput(htmlInp);
+      parts.push(`  <input type="${htmlInp.type}" value="${htmlInp.value}" label="${lbl}"/>`);
+    }
+
+    parts.push('</form>');
+  }
+
+  // Visible buttons
+  const buttons = document.querySelectorAll('button');
+  for (const btn of buttons) {
+    if (!isVisible(btn)) continue;
+    const text = btn.textContent?.trim() || '';
+    const testId = btn.getAttribute('data-testid') || '';
+    const disabled = (btn as HTMLButtonElement).disabled ? ' disabled' : '';
+    parts.push(`<button data-testid="${testId}"${disabled}>${text}</button>`);
+  }
+
+  let dom = parts.join('\n');
+  if (dom.length > MAX_LENGTH) dom = dom.substring(0, MAX_LENGTH) + '\n... (truncated)';
+  return dom;
+}
+
+/** When stuck, ask Claude to analyze the DOM and tell us what to do. */
+async function askClaudeForDomAction(): Promise<'continued' | 'submitted' | 'none'> {
+  const simplifiedDom = getSimplifiedDom();
+  log(`🧠 DOM Fallback: sending simplified DOM (${simplifiedDom.length} chars) to AI`);
+
+  const question = `You are automating an Indeed job application wizard. The bot is stuck on this page and doesn't know what to do.
+
+Analyze the DOM below and respond with EXACTLY one of:
+1. "CLICK:<data-testid>" — if a button should be clicked (e.g. "CLICK:continue-button")
+2. "CLICK_TEXT:<button text>" — if button has no testid (e.g. "CLICK_TEXT:Continuar")
+3. "SELECT:<data-testid>" — if a radio/checkbox should be selected first
+4. "SKIP" — if this page should be skipped/is informational
+
+RULES:
+- Always opt-in to allow companies to find you
+- Always accept terms, notifications, agreements
+- Always click continue/next when possible
+- Prefer the most positive/permissive option
+
+Page DOM:
+${simplifiedDom}`;
+
+  const answer = await askClaude(question);
+  if (!answer) return 'none';
+
+  log(`🧠 DOM Fallback AI response: "${answer}"`);
+
+  if (answer.startsWith('CLICK:')) {
+    const testId = answer.substring(6).trim();
+    const btn = document.querySelector<HTMLElement>(`[data-testid="${testId}"]`);
+    if (btn) {
+      btn.click();
+      log(`🧠 DOM Fallback: clicked [data-testid="${testId}"]`);
+      return 'continued';
+    }
+  }
+
+  if (answer.startsWith('CLICK_TEXT:')) {
+    const text = answer.substring(11).trim().toLowerCase();
+    const buttons = document.querySelectorAll('button');
+    for (const btn of buttons) {
+      if (!isVisible(btn)) continue;
+      if ((btn.textContent || '').toLowerCase().trim().includes(text)) {
+        (btn as HTMLElement).click();
+        log(`🧠 DOM Fallback: clicked button with text "${text}"`);
+        return 'continued';
+      }
+    }
+  }
+
+  if (answer.startsWith('SELECT:')) {
+    const testId = answer.substring(7).trim();
+    const el = document.querySelector<HTMLInputElement>(`[data-testid="${testId}"]`);
+    if (el) {
+      el.click();
+      log(`🧠 DOM Fallback: selected [data-testid="${testId}"]`);
+      await waitMs(300);
+      // After selecting, try to click continue
+      if (clickFirst(CONTINUE_SELECTORS)) return 'continued';
+    }
+  }
+
+  return 'none';
 }
 
 // ── Questionnaire Handling (all via Claude) ──
 
 async function handleQuestionnaire(): Promise<{ needsUserInput: boolean; fieldLabel?: string }> {
-  // Text inputs
-  const textInputs = document.querySelectorAll<HTMLInputElement>(
-    'input[type="text"], input[type="email"], input[type="tel"], input[type="number"], input[type="date"]'
+  const MAX_RETRIES = 2;
+
+  // Text inputs + textareas (unified with retry logic)
+  const textInputs = document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
+    'input[type="text"], input[type="email"], input[type="tel"], input[type="number"], input[type="date"], textarea'
   );
 
   for (const inp of textInputs) {
@@ -435,29 +674,57 @@ async function handleQuestionnaire(): Promise<{ needsUserInput: boolean; fieldLa
     const label = getLabelForInput(inp);
     if (!label) continue;
 
-    const answer = await askClaude(label);
-    if (answer) {
+    const constraints = getInputConstraints(inp);
+    log(`📝 Field: "${label}" [type=${constraints.type}, required=${constraints.required}${constraints.maxLength ? `, maxLen=${constraints.maxLength}` : ''}${constraints.min ? `, min=${constraints.min}` : ''}${constraints.max ? `, max=${constraints.max}` : ''}${constraints.pattern ? `, pattern=${constraints.pattern}` : ''}]`);
+
+    let filled = false;
+    let errorContext: string | undefined;
+
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      const answer = await askClaude(label, undefined, constraints, errorContext);
+      if (!answer) {
+        const isRequired = constraints.required || label.includes('*');
+        if (isRequired) return { needsUserInput: true, fieldLabel: label };
+        break;
+      }
+
+      // Pre-fill validation
+      const validation = validateAnswer(answer, constraints);
+      if (!validation.valid) {
+        log(`⚠️ Pre-validation failed for "${label}": ${validation.error} (answer="${answer}", attempt ${attempt + 1}/${MAX_RETRIES + 1})`, 'warning');
+        if (attempt < MAX_RETRIES) {
+          errorContext = `Previous answer "${answer}" was rejected: ${validation.error}. Generate a valid answer.`;
+          continue;
+        }
+        // Last attempt: truncate if maxLength issue, or use as-is
+        if (constraints.maxLength && answer.length > constraints.maxLength) {
+          fillInput(inp, answer.substring(0, constraints.maxLength));
+          filled = true;
+        }
+        break;
+      }
+
+      // Fill the input
       fillInput(inp, answer);
-    } else {
-      const isRequired = inp.required || inp.getAttribute('aria-required') === 'true' || label.includes('*');
-      if (isRequired) return { needsUserInput: true, fieldLabel: label };
+      await waitMs(300);
+
+      // Post-fill validation (check browser/UI errors)
+      const domError = detectValidationError(inp);
+      if (domError) {
+        log(`⚠️ Post-fill error for "${label}": ${domError} (answer="${answer}", attempt ${attempt + 1}/${MAX_RETRIES + 1})`, 'warning');
+        if (attempt < MAX_RETRIES) {
+          fillInput(inp, ''); // Clear field for retry
+          errorContext = `Previous answer "${answer}" triggered error: "${domError}". Generate a different answer.`;
+          continue;
+        }
+      }
+
+      filled = true;
+      break;
     }
-  }
 
-  // Textareas
-  const textareas = document.querySelectorAll<HTMLTextAreaElement>('textarea');
-  for (const ta of textareas) {
-    if (!isVisible(ta)) continue;
-    if (ta.value.trim()) continue;
-
-    const label = getLabelForInput(ta);
-    if (!label) continue;
-
-    const answer = await askClaude(label);
-    if (answer) {
-      fillInput(ta, answer);
-    } else {
-      const isRequired = ta.required || ta.getAttribute('aria-required') === 'true' || label.includes('*');
+    if (!filled) {
+      const isRequired = constraints.required || label.includes('*');
       if (isRequired) return { needsUserInput: true, fieldLabel: label };
     }
   }
@@ -484,11 +751,16 @@ async function handleQuestionnaire(): Promise<{ needsUserInput: boolean; fieldLa
       }
     }
 
+    log(`📝 Select: "${label}" [options: ${optionTexts.join(', ')}]`);
+
     if (optionTexts.length > 0) {
       const answer = await askClaude(label, optionTexts);
       if (answer) {
         const idx = optionTexts.indexOf(answer);
-        if (idx >= 0) selectOption(sel, optionValues[idx]);
+        if (idx >= 0) {
+          selectOption(sel, optionValues[idx]);
+          log(`✅ Selected: "${answer}" for "${label}"`);
+        }
       } else {
         return { needsUserInput: true, fieldLabel: label };
       }
@@ -523,11 +795,16 @@ async function handleQuestionnaire(): Promise<{ needsUserInput: boolean; fieldLa
       groupLabel = name;
     }
 
+    log(`📝 Radio: "${groupLabel}" [options: ${optionLabels.join(', ')}]`);
+
     if (optionLabels.length > 0) {
       const answer = await askClaude(groupLabel, optionLabels);
       if (answer) {
         const idx = optionLabels.indexOf(answer);
-        if (idx >= 0) groupRadios[idx].click();
+        if (idx >= 0) {
+          groupRadios[idx].click();
+          log(`✅ Selected radio: "${answer}" for "${groupLabel}"`);
+        }
       } else {
         return { needsUserInput: true, fieldLabel: groupLabel };
       }
@@ -542,38 +819,45 @@ async function handleQuestionnaire(): Promise<{ needsUserInput: boolean; fieldLa
 // ── Wizard Navigation ──
 
 function clickContinueOrSubmit(): 'submitted' | 'continued' | 'none' {
-  if (clickFirst(SUBMIT_SELECTORS)) return 'submitted';
-  if (clickFirst(CONTINUE_SELECTORS)) return 'continued';
+  // Log all visible buttons for debugging
+  const allBtns = findAll('button', document).filter(isVisible);
+  const btnTexts = allBtns.map(b => (b.textContent || '').trim().substring(0, 40));
+  log(`Buttons on page: [${btnTexts.join(', ')}]`);
 
-  const btns = findAll('button', document).filter(isVisible);
+  if (clickFirst(SUBMIT_SELECTORS)) { log('Clicked SUBMIT via selector'); return 'submitted'; }
+  if (clickFirst(CONTINUE_SELECTORS)) { log('Clicked CONTINUE via selector'); return 'continued'; }
 
-  for (const btn of btns) {
+  for (const btn of allBtns) {
     const text = (btn.textContent || '').toLowerCase().trim();
     if (SKIP_KEYWORDS.some(kw => text.includes(kw))) continue;
     if (SUBMIT_KEYWORDS.some(kw => text.includes(kw))) {
+      log(`Clicked SUBMIT button: "${text}"`);
       (btn as HTMLElement).click();
       return 'submitted';
     }
   }
 
-  for (const btn of btns) {
+  for (const btn of allBtns) {
     const text = (btn.textContent || '').toLowerCase().trim();
     if (SKIP_KEYWORDS.some(kw => text.includes(kw))) continue;
     if (CONTINUE_KEYWORDS.some(kw => text.includes(kw))) {
+      log(`Clicked CONTINUE button: "${text}"`);
       (btn as HTMLElement).click();
       return 'continued';
     }
   }
 
-  for (const btn of btns) {
+  for (const btn of allBtns) {
     const text = (btn.textContent || '').toLowerCase().trim();
     if (SKIP_KEYWORDS.some(kw => text.includes(kw))) continue;
     if (!text || text.length > 50) continue;
     if (isDisabled(btn)) continue;
+    log(`Clicked FALLBACK button: "${text}"`);
     (btn as HTMLElement).click();
     return 'continued';
   }
 
+  log('No clickable button found!', 'warning');
   return 'none';
 }
 
@@ -616,25 +900,85 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
       const coverBuffer = coverData ? new Uint8Array(coverData).buffer : undefined;
 
       (async () => {
-        await handleResumeStep(cvBuffer, cvFilename);
+        try {
+          log(`FILL_AND_ADVANCE: url=${window.location.href.substring(0, 80)}, hasCv=${!!(cvBuffer && cvFilename)}, cvSize=${cvBuffer?.byteLength || 0}`);
 
-        if (hasCoverLetterField()) {
-          await handleCoverLetter(coverBuffer, coverFilename);
-          await waitMs(300);
-        }
+          // FIRST: Handle special pages (privacy-settings, consent, etc.)
+          // Must run BEFORE resume upload — sub-pages like /privacy-settings
+          // are inside the resume-selection module but have no file inputs.
+          const specialHandled = await handleSpecialPages();
+          if (specialHandled) {
+            log('Special page handled, continuing');
+            sendResponse({ type: 'STEP_RESULT', payload: { action: 'continued' } });
+            return;
+          }
 
-        const result = await handleQuestionnaire();
-        if (result.needsUserInput) {
+          // Check if this is actually a resume upload page (not a sub-page like privacy-settings).
+          // The URL may contain "resume-selection" but the actual page could be a sub-step.
+          // Only treat as resume page if there's a file input or resume card visible.
+          const hasCvToUpload = !!(cvBuffer && cvFilename);
+          const hasResumeUploadUI = !!(
+            document.querySelector('input[type="file"]') ||
+            document.querySelector('[data-testid="ResumeOptionsMenu"]') ||
+            document.querySelector('[data-testid*="resume-selection-file"]') ||
+            document.querySelector('[data-testid*="resume-display"]')
+          );
+          const isResumeSelectionPage = hasResumeUploadUI && (
+            window.location.href.includes('resume-selection') ||
+            !!document.querySelector('[data-testid*="resume-selection"]')
+          );
+
+          log(`Page check: isResumePage=${isResumeSelectionPage}, hasResumeUI=${hasResumeUploadUI}, hasCvToUpload=${hasCvToUpload}`);
+
+          if (isResumeSelectionPage && hasCvToUpload) {
+            log('On resume-selection page with CV data, uploading...');
+            const uploadOk = await handleResumeStep(cvBuffer, cvFilename);
+            log(`Upload result: ${uploadOk}`);
+
+            if (!uploadOk) {
+              log('WARNING: CV upload failed on resume-selection page, continuing anyway with existing CV', 'warning');
+              // Don't block — fall through to click Continue with whatever CV is there
+            }
+          } else if (hasCvToUpload && hasResumeUploadUI) {
+            // Not explicitly resume page but has file input — try upload anyway
+            await handleResumeStep(cvBuffer, cvFilename);
+          }
+
+          if (hasCoverLetterField()) {
+            log('Cover letter field detected, handling...');
+            await handleCoverLetter(coverBuffer, coverFilename);
+            await waitMs(300);
+          }
+
+          const result = await handleQuestionnaire();
+          if (result.needsUserInput) {
+            log(`Questionnaire needs input: ${result.fieldLabel}`, 'warning');
+            sendResponse({
+              type: 'STEP_RESULT',
+              payload: { action: 'needs_input', fieldLabel: result.fieldLabel },
+            });
+            return;
+          }
+
+          await waitMs(500);
+          let navResult = clickContinueOrSubmit();
+          log(`Navigation result: ${navResult}`);
+
+          // DOM-based AI fallback: when no button found, ask AI to analyze the page
+          if (navResult === 'none') {
+            log('⚠️ No navigation button found, trying DOM-based AI fallback...', 'warning');
+            navResult = await askClaudeForDomAction();
+            log(`DOM fallback result: ${navResult}`);
+          }
+
+          sendResponse({ type: 'STEP_RESULT', payload: { action: navResult } });
+        } catch (err) {
+          log(`FILL_AND_ADVANCE ERROR: ${err}`, 'error');
           sendResponse({
             type: 'STEP_RESULT',
-            payload: { action: 'needs_input', fieldLabel: result.fieldLabel },
+            payload: { action: 'needs_input', fieldLabel: `Internal error: ${err}` },
           });
-          return;
         }
-
-        await waitMs(500);
-        const navResult = clickContinueOrSubmit();
-        sendResponse({ type: 'STEP_RESULT', payload: { action: navResult } });
       })();
 
       return true;

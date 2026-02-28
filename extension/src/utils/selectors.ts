@@ -215,31 +215,150 @@ export function setInputFiles(input: HTMLInputElement, file: File): void {
  * @param timeoutMs - How long to poll for changes
  */
 export async function verifyUploadAccepted(timeoutMs = 3000, expectedFilename?: string): Promise<boolean> {
-  // Snapshot the current label BEFORE waiting, so we can detect a change
+  // Snapshot the current label BEFORE waiting, so we can detect a change.
+  // The label is the source of truth — NOT input.files, which can be set on the DOM
+  // without React actually processing the change (false positive when input is hidden).
   const labelBefore = document.querySelector(
     '[data-testid="resume-selection-file-resume-upload-radio-card-label"], [data-testid="resume-selection-file-resume-radio-card-label"]'
   )?.textContent?.trim() || '';
 
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    // Check 1: File input has files set with the expected filename
-    const inputs = document.querySelectorAll<HTMLInputElement>('input[type="file"]');
-    for (const fi of inputs) {
-      if (fi.files && fi.files.length > 0) {
-        if (!expectedFilename) return true;
-        if (fi.files[0].name === expectedFilename) return true;
-      }
-    }
-    // Check 2: Indeed resume-selection label CHANGED to show the new filename
+    // Primary check: Indeed resume-selection label shows the new filename.
+    // This is the only reliable indicator that React actually processed the upload.
     const resumeLabel = document.querySelector(
       '[data-testid="resume-selection-file-resume-upload-radio-card-label"], [data-testid="resume-selection-file-resume-radio-card-label"]'
     )?.textContent?.trim() || '';
     if (expectedFilename && resumeLabel.includes(expectedFilename.replace('.pdf', ''))) return true;
     if (!expectedFilename && resumeLabel !== labelBefore && resumeLabel.length > 0) return true;
 
+    // Secondary check: "Carregado agora" / "Uploaded just now" text appeared
+    // (indicates a fresh upload was processed by React)
+    const bodyText = document.body?.innerText || '';
+    if (expectedFilename && bodyText.includes(expectedFilename.replace('.pdf', ''))
+        && (bodyText.includes('Carregado agora') || bodyText.includes('Uploaded just now') || bodyText.includes('just now'))) {
+      return true;
+    }
+
     await new Promise(r => setTimeout(r, 300));
   }
   return false;
+}
+
+// ── Input Constraints & Validation ──
+
+export interface InputConstraints {
+  type: string;
+  maxLength?: number;
+  minLength?: number;
+  min?: string;
+  max?: string;
+  pattern?: string;
+  step?: string;
+  required: boolean;
+}
+
+/** Extract HTML validation constraints from an input element. */
+export function getInputConstraints(el: HTMLInputElement | HTMLTextAreaElement): InputConstraints {
+  const constraints: InputConstraints = {
+    type: (el as HTMLInputElement).type || 'text',
+    required: el.required || el.getAttribute('aria-required') === 'true',
+  };
+
+  if (el instanceof HTMLInputElement) {
+    if (el.maxLength > 0 && el.maxLength < 524288) constraints.maxLength = el.maxLength;
+    if (el.minLength > 0) constraints.minLength = el.minLength;
+    if (el.min) constraints.min = el.min;
+    if (el.max) constraints.max = el.max;
+    if (el.pattern) constraints.pattern = el.pattern;
+    if (el.step && el.step !== 'any') constraints.step = el.step;
+  }
+
+  if (el instanceof HTMLTextAreaElement) {
+    if (el.maxLength > 0 && el.maxLength < 524288) constraints.maxLength = el.maxLength;
+    if (el.minLength > 0) constraints.minLength = el.minLength;
+  }
+
+  return constraints;
+}
+
+/** Validate an answer string against input constraints. */
+export function validateAnswer(
+  answer: string,
+  constraints: InputConstraints
+): { valid: boolean; error?: string } {
+  if (!answer && constraints.required) {
+    return { valid: false, error: 'Field is required' };
+  }
+  if (!answer) return { valid: true };
+
+  if (constraints.type === 'number') {
+    if (isNaN(Number(answer))) {
+      return { valid: false, error: `Value must be a number, got "${answer}"` };
+    }
+    const num = Number(answer);
+    if (constraints.min !== undefined && num < Number(constraints.min)) {
+      return { valid: false, error: `Value must be >= ${constraints.min}` };
+    }
+    if (constraints.max !== undefined && num > Number(constraints.max)) {
+      return { valid: false, error: `Value must be <= ${constraints.max}` };
+    }
+  }
+
+  if (constraints.type === 'date') {
+    if (constraints.min && answer < constraints.min) {
+      return { valid: false, error: `Date must be >= ${constraints.min}` };
+    }
+    if (constraints.max && answer > constraints.max) {
+      return { valid: false, error: `Date must be <= ${constraints.max}` };
+    }
+  }
+
+  if (constraints.maxLength && answer.length > constraints.maxLength) {
+    return { valid: false, error: `Max length is ${constraints.maxLength}, got ${answer.length}` };
+  }
+
+  if (constraints.minLength && answer.length < constraints.minLength) {
+    return { valid: false, error: `Min length is ${constraints.minLength}, got ${answer.length}` };
+  }
+
+  if (constraints.pattern) {
+    try {
+      if (!new RegExp(constraints.pattern).test(answer)) {
+        return { valid: false, error: `Value doesn't match pattern: ${constraints.pattern}` };
+      }
+    } catch { /* invalid regex, skip */ }
+  }
+
+  return { valid: true };
+}
+
+/** Detect validation errors on an element after filling it. */
+export function detectValidationError(el: HTMLInputElement | HTMLTextAreaElement): string | null {
+  // Native browser validation
+  if (el.validationMessage) return el.validationMessage;
+
+  // Check aria-invalid
+  if (el.getAttribute('aria-invalid') === 'true') {
+    // Look for associated error message
+    const errId = el.getAttribute('aria-errormessage') || el.getAttribute('aria-describedby');
+    if (errId) {
+      const errEl = document.getElementById(errId);
+      if (errEl?.textContent?.trim()) return errEl.textContent.trim();
+    }
+  }
+
+  // Look for nearby error elements
+  const parent = el.closest('div, fieldset, li');
+  if (parent) {
+    const errorEl = parent.querySelector('.error, [role="alert"], .field-error, .input-error, [class*="error" i]');
+    if (errorEl && isVisible(errorEl)) {
+      const text = errorEl.textContent?.trim();
+      if (text) return text;
+    }
+  }
+
+  return null;
 }
 
 /** Get label text for an input element. */

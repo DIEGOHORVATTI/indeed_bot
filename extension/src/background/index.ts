@@ -4,7 +4,7 @@
  */
 
 import { Message, Settings, DEFAULT_SETTINGS } from '../types';
-import { startBot, stopBot, pauseBot, resumeBot, getStatus } from './orchestrator';
+import { startBot, stopBot, pauseBot, resumeBot, getStatus, addLog } from './orchestrator';
 import { AnswerCache } from '../services/answer-cache';
 import { askClaudeForAnswer } from '../services/claude';
 import { setupNotificationListeners } from '../utils/notifications';
@@ -65,7 +65,7 @@ async function handleMessage(
       break;
 
     case 'ASK_CLAUDE': {
-      const { question, options, jobTitle, baseProfile, cacheOnly, storeCache, label, inputType, answer } = message.payload || {};
+      const { question, options, jobTitle, baseProfile, cacheOnly, storeCache, label, inputType, answer, constraints, errorContext } = message.payload || {};
 
       // Cache store request
       if (storeCache) {
@@ -99,7 +99,8 @@ async function handleMessage(
 
         const profileContext = baseProfile || settings.personalization?.baseProfile || '';
         const claudeAnswer = await askClaudeForAnswer(
-          question, options, jobTitle || '', settings.backendUrl, profileContext
+          question, options, jobTitle || '', settings.backendUrl, profileContext,
+          constraints, errorContext
         );
 
         if (claudeAnswer) {
@@ -108,6 +109,15 @@ async function handleMessage(
 
         sendResponse({ payload: { answer: claudeAnswer } });
       }
+      break;
+    }
+
+    case 'ADD_LOG': {
+      const { level, message: msg } = message.payload || {};
+      if (level && msg) {
+        addLog(level, msg);
+      }
+      sendResponse({ ok: true });
       break;
     }
 

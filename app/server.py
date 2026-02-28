@@ -31,11 +31,22 @@ app.add_middleware(
 # ── Request / Response models ──
 
 
+class InputConstraints(BaseModel):
+    type: str | None = None
+    maxLength: int | None = None
+    minLength: int | None = None
+    min: str | None = None
+    max: str | None = None
+    pattern: str | None = None
+
+
 class AnswerRequest(BaseModel):
     question: str
     options: list[str] | None = None
     jobTitle: str = ""
     baseProfile: str = ""
+    constraints: InputConstraints | None = None
+    errorContext: str | None = None
 
 
 class AnswerResponse(BaseModel):
@@ -98,6 +109,26 @@ async def answer_question(req: AnswerRequest):
 
     if req.jobTitle:
         prompt_parts.append(f"\nJob title being applied for: {req.jobTitle}")
+
+    if req.constraints:
+        c = req.constraints
+        constraint_lines = ["INPUT CONSTRAINTS (your answer MUST satisfy these):"]
+        if c.type:
+            constraint_lines.append(f"- Type: {c.type}" + (" (only digits allowed)" if c.type == "number" else ""))
+        if c.maxLength is not None:
+            constraint_lines.append(f"- Max length: {c.maxLength} characters")
+        if c.minLength is not None:
+            constraint_lines.append(f"- Min length: {c.minLength} characters")
+        if c.min is not None:
+            constraint_lines.append(f"- Min value: {c.min}")
+        if c.max is not None:
+            constraint_lines.append(f"- Max value: {c.max}")
+        if c.pattern:
+            constraint_lines.append(f"- Pattern (regex): {c.pattern}")
+        prompt_parts.append("\n" + "\n".join(constraint_lines))
+
+    if req.errorContext:
+        prompt_parts.append(f"\nPREVIOUS ERROR: {req.errorContext}")
 
     prompt_parts.append(f"\nForm field / Question: {req.question}")
 

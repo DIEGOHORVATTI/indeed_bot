@@ -26,7 +26,7 @@ let stopRequested = false;
 
 // ── Logging ──
 
-function addLog(level: LogEntry['level'], message: string): void {
+export function addLog(level: LogEntry['level'], message: string): void {
   log.push({ timestamp: Date.now(), level, message });
   if (log.length > 200) log = log.slice(-100);
   broadcastStatus();
@@ -306,8 +306,15 @@ async function applyToJob(job: JobEntry): Promise<true | string | false> {
       coverPdfData = await generatePdfFromHtml(coverHtml, settings.backendUrl, coverFilename);
       addLog('info', `Cover letter PDF generated: ${coverFilename}`);
     } catch (err) {
-      addLog('warning', `CV generation failed: ${err}`);
+      addLog('error', `CV generation failed: ${err}`);
     }
+  }
+
+  // If personalization is enabled but CV generation failed, abort — don't apply with old CV
+  const cvRequired = settings.personalization.enabled;
+  if (cvRequired && !cvPdfData) {
+    addLog('error', 'Dynamic CV required but generation failed (is backend running?). Skipping job.');
+    return 'cv_generation_failed';
   }
 
   // Click Apply button
@@ -364,10 +371,11 @@ async function applyToJob(job: JobEntry): Promise<true | string | false> {
     });
 
     const stepResult = stepResponse?.payload?.action;
+    addLog('info', `Wizard step ${step + 1}: action="${stepResult || 'none'}", payload=${JSON.stringify(stepResponse?.payload || {}).substring(0, 200)}`);
 
     // If no response (smartapply not ready yet), wait and retry
     if (!stepResult) {
-      addLog('info', `Wizard step ${step + 1}: no response, retrying...`);
+      addLog('info', `Wizard step ${step + 1}: no response, retrying in 2s...`);
       await delay(2000);
       continue;
     }
@@ -393,7 +401,14 @@ async function applyToJob(job: JobEntry): Promise<true | string | false> {
         // Check if field is now filled
         const retryResponse = await sendToTab(botTabId, {
           type: 'FILL_AND_ADVANCE',
-          payload: { jobTitle: job.title || '', baseProfile: settings?.personalization?.baseProfile || '' },
+          payload: {
+            cvData: cvPdfData ? Array.from(new Uint8Array(cvPdfData)) : undefined,
+            cvFilename,
+            coverData: coverPdfData ? Array.from(new Uint8Array(coverPdfData)) : undefined,
+            coverFilename,
+            jobTitle: job.title || '',
+            baseProfile: settings?.personalization?.baseProfile || '',
+          },
         });
         if (retryResponse?.payload?.action !== 'needs_input') {
           state = 'applying';
@@ -410,11 +425,29 @@ async function applyToJob(job: JobEntry): Promise<true | string | false> {
       if (url.includes('confirmation') || url.includes('submitted') || url.includes('success')) {
         return true;
       }
+    } else if (stepResult === 'none') {
+      // Page may still be loading — wait and retry instead of giving up immediately
+      addLog('info', `No button found at step ${step + 1}, waiting for page load...`);
+      await delay(3000);
     } else {
-      addLog('warning', `No button found at step ${step + 1}`);
+      addLog('warning', `Unknown step result: ${stepResult}`);
       break;
     }
   }
+
+  // Last resort: try one final submit click before giving up
+  addLog('info', 'Wizard loop ended — attempting final submit...');
+  try {
+    const finalResp = await sendToTab(botTabId, {
+      type: 'FILL_AND_ADVANCE',
+      payload: { jobTitle: job.title || '', baseProfile: settings?.personalization?.baseProfile || '' },
+    });
+    if (finalResp?.payload?.action === 'submitted') {
+      addLog('info', 'Application submitted (final attempt)');
+      await delay(2000);
+      return true;
+    }
+  } catch { /* tab may be closed */ }
 
   return false;
 }

@@ -8,6 +8,15 @@ interface BackendAnswerRequest {
   options?: string[];
   jobTitle?: string;
   baseProfile?: string;
+  constraints?: {
+    type?: string;
+    maxLength?: number;
+    minLength?: number;
+    min?: string;
+    max?: string;
+    pattern?: string;
+  };
+  errorContext?: string;
 }
 
 interface BackendTailorRequest {
@@ -26,7 +35,9 @@ export async function askClaudeForAnswer(
   options: string[] | undefined,
   jobTitle: string,
   backendUrl: string,
-  baseProfile?: string
+  baseProfile?: string,
+  constraints?: BackendAnswerRequest['constraints'],
+  errorContext?: string
 ): Promise<string | null> {
   if (!backendUrl) return null;
 
@@ -34,6 +45,8 @@ export async function askClaudeForAnswer(
     const body: BackendAnswerRequest = { question, jobTitle };
     if (baseProfile) body.baseProfile = baseProfile;
     if (options && options.length > 0) body.options = options;
+    if (constraints) body.constraints = constraints;
+    if (errorContext) body.errorContext = errorContext;
 
     const response = await fetch(`${backendUrl}/api/answer`, {
       method: 'POST',
