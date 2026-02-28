@@ -816,6 +816,114 @@ async function handleQuestionnaire(): Promise<{ needsUserInput: boolean; fieldLa
   return { needsUserInput: false };
 }
 
+// ── Post-Click Error Detection ──
+
+/** Scan the page for visible validation/error messages after clicking Continue/Submit. */
+function detectPageErrors(): string[] {
+  const errors: string[] = [];
+  const seen = new Set<string>();
+
+  // 1. Native HTML5 validation on all inputs
+  const allInputs = document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(
+    'input, textarea, select'
+  );
+  for (const inp of allInputs) {
+    if (inp.validationMessage && !seen.has(inp.validationMessage)) {
+      const label = getLabelForInput(inp);
+      const msg = label ? `${label}: ${inp.validationMessage}` : inp.validationMessage;
+      errors.push(msg);
+      seen.add(inp.validationMessage);
+    }
+  }
+
+  // 2. Visible error elements on the page
+  const errorSelectors = [
+    '[role="alert"]',
+    '[aria-invalid="true"]',
+    '.error', '.field-error', '.input-error',
+    '[class*="error" i]:not(script):not(style)',
+    '[class*="Error" i]:not(script):not(style)',
+    '[data-testid*="error" i]',
+  ];
+  for (const sel of errorSelectors) {
+    try {
+      const els = document.querySelectorAll(sel);
+      for (const el of els) {
+        if (!isVisible(el)) continue;
+        const text = el.textContent?.trim();
+        if (text && text.length > 2 && text.length < 300 && !seen.has(text)) {
+          errors.push(text);
+          seen.add(text);
+        }
+      }
+    } catch { /* invalid selector */ }
+  }
+
+  return errors;
+}
+
+/**
+ * Try to fix form errors detected after clicking Continue/Submit.
+ * For each input with an error, ask Claude for a corrected answer.
+ */
+async function handlePostClickErrors(pageErrors: string[]): Promise<'fixed' | 'failed'> {
+  let anyFixed = false;
+
+  // Find inputs with validation errors
+  const allInputs = document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
+    'input:not([type="hidden"]):not([type="file"]):not([type="radio"]):not([type="checkbox"]), textarea'
+  );
+
+  for (const inp of allInputs) {
+    if (!isVisible(inp)) continue;
+
+    const domError = detectValidationError(inp);
+    if (!domError) continue;
+
+    const label = getLabelForInput(inp);
+    if (!label) continue;
+
+    const constraints = getInputConstraints(inp);
+    const currentValue = inp.value;
+    const errorContext = `After submitting the form, field "${label}" has error: "${domError}". Current value: "${currentValue}". Page errors: ${pageErrors.join('; ')}. Fix the answer.`;
+
+    log(`🔧 Fixing field "${label}" — error: "${domError}", current: "${currentValue}"`);
+
+    const answer = await askClaude(label, undefined, constraints, errorContext);
+    if (answer) {
+      fillInput(inp, answer);
+      log(`🔧 Fixed "${label}" with new answer: "${answer}"`);
+      anyFixed = true;
+      await waitMs(300);
+    }
+  }
+
+  // Also check for unfilled required fields that might have appeared
+  for (const inp of allInputs) {
+    if (!isVisible(inp)) continue;
+    if (inp.value.trim()) continue;
+
+    const isRequired = inp.required || inp.getAttribute('aria-required') === 'true';
+    if (!isRequired) continue;
+
+    const label = getLabelForInput(inp);
+    if (!label) continue;
+
+    const constraints = getInputConstraints(inp);
+    log(`🔧 Found empty required field: "${label}"`);
+
+    const answer = await askClaude(label, undefined, constraints);
+    if (answer) {
+      fillInput(inp, answer);
+      log(`🔧 Filled empty required field "${label}" with: "${answer}"`);
+      anyFixed = true;
+      await waitMs(300);
+    }
+  }
+
+  return anyFixed ? 'fixed' : 'failed';
+}
+
 // ── Wizard Navigation ──
 
 function clickContinueOrSubmit(): 'submitted' | 'continued' | 'none' {
@@ -961,6 +1069,10 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
           }
 
           await waitMs(500);
+
+          // Snapshot URL before clicking to detect if page actually changed
+          const urlBefore = window.location.href;
+
           let navResult = clickContinueOrSubmit();
           log(`Navigation result: ${navResult}`);
 
@@ -969,6 +1081,34 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
             log('⚠️ No navigation button found, trying DOM-based AI fallback...', 'warning');
             navResult = await askClaudeForDomAction();
             log(`DOM fallback result: ${navResult}`);
+          }
+
+          // Post-click error detection: if we clicked continue/submit,
+          // wait and check if the page stayed (form errors blocking navigation)
+          if (navResult === 'continued' || navResult === 'submitted') {
+            await waitMs(1500);
+            const urlAfter = window.location.href;
+            const pageChanged = urlAfter !== urlBefore;
+
+            if (!pageChanged) {
+              // Page didn't change — look for validation errors
+              const pageErrors = detectPageErrors();
+              if (pageErrors.length > 0) {
+                log(`⚠️ Form errors detected after clicking: ${pageErrors.join(' | ')}`, 'warning');
+
+                // Try to fix: ask AI to analyze the errors + DOM and act
+                const fixResult = await handlePostClickErrors(pageErrors);
+                if (fixResult === 'fixed') {
+                  // Retry navigation after fixing
+                  await waitMs(500);
+                  navResult = clickContinueOrSubmit();
+                  log(`Retry navigation after fix: ${navResult}`);
+                } else {
+                  log('⚠️ Could not fix form errors, sending DOM to AI', 'warning');
+                  navResult = await askClaudeForDomAction();
+                }
+              }
+            }
           }
 
           sendResponse({ type: 'STEP_RESULT', payload: { action: navResult } });
