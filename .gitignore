@@ -206,10 +206,10 @@ __marimo__/
 *.swo
 *.swp
 
-# indeed_bot specific files
-logs.txt
-user_data_dir/
+# Node / Extension
+node_modules/
+apps/extension/dist/
+
+# Runtime artifacts
 output/
-applied_jobs.json
-job_registry.json
 .DS_Store

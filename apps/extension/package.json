@@ -1,0 +1,22 @@
+{
+  "name": "indeed-auto-apply",
+  "version": "0.2.27",
+  "description": "Chrome extension for auto-applying to Indeed jobs",
+  "private": true,
+  "scripts": {
+    "build": "webpack --mode production",
+    "dev": "webpack --mode development --watch",
+    "clean": "rm -rf dist",
+    "bump": "node -e \"const p=require('./package.json'),m=require('./manifest.json'),fs=require('fs');const v=p.version.split('.'),patch=+v[2]+1;v[2]=patch;const nv=v.join('.');p.version=nv;m.version=nv;fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\\n');fs.writeFileSync('manifest.json',JSON.stringify(m,null,2)+'\\n');console.log('Bumped to '+nv)\"",
+    "release": "npm run bump && npm run build && git add -A && git commit -m \"chore: bump extension to v$(node -p \"require('./package.json').version\")\" && git push"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.287",
+    "copy-webpack-plugin": "^12.0.2",
+    "ts-loader": "^9.5.1",
+    "typescript": "^5.7.0",
+    "webpack": "^5.97.0",
+    "webpack-cli": "^6.0.0"
+  },
+  "dependencies": {}
+}
