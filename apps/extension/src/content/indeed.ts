@@ -139,6 +139,43 @@ function scrapeJobDescription(): JobInfo {
   };
 }
 
+// ── Job Count & Pages ──
+
+function getTotalJobCount(): number | null {
+  // Try search results count header (e.g., "74 vagas" / "74 jobs")
+  const countSelectors = [
+    '.jobsearch-JobCountAndSortPane-jobCount',
+    '[data-testid="jobCount"]',
+    '.jobsearch-ResultsList-header span',
+  ];
+  for (const sel of countSelectors) {
+    const el = document.querySelector(sel);
+    if (el) {
+      const match = el.textContent?.match(/(\d[\d.,]*)/);
+      if (match) return parseInt(match[1].replace(/[.,]/g, ''), 10);
+    }
+  }
+
+  // Fallback: meta description (e.g., "Confira 74 vagas abertas")
+  const meta = document.querySelector('meta[name="description"]');
+  const content = meta?.getAttribute('content') || '';
+  const metaMatch = content.match(/(\d+)\s*vagas|(\d+)\s*jobs/i);
+  if (metaMatch) return parseInt(metaMatch[1] || metaMatch[2], 10);
+
+  return null;
+}
+
+function getTotalPages(): number {
+  const pageLinks = document.querySelectorAll(
+    'nav[role="navigation"] a[data-testid^="pagination-page-"]'
+  );
+  // Subtract 1 for the "next" link (pagination-page-next)
+  const count = Array.from(pageLinks).filter(
+    el => el.getAttribute('data-testid') !== 'pagination-page-next'
+  ).length;
+  return Math.max(1, count);
+}
+
 // ── Pagination ──
 
 function getNextPageUrl(): string | null {
@@ -146,10 +183,10 @@ function getNextPageUrl(): string | null {
   const nextSelectors = [
     'a[data-testid="pagination-page-next"]',
     'nav[aria-label*="pagination"] a:last-child',
-    'nav[role="navigation"] a[aria-label="Next"]',
-    'nav[role="navigation"] a[aria-label="Próxima"]',
-    'a[aria-label="Next"]',
-    'a[aria-label="Próxima"]',
+    'nav[role="navigation"] a[aria-label*="Next"]',
+    'nav[role="navigation"] a[aria-label*="Próxima"]',
+    'a[aria-label*="Next"]',
+    'a[aria-label*="Próxima"]',
   ];
 
   for (const sel of nextSelectors) {
@@ -201,6 +238,13 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
     case 'GET_NEXT_PAGE': {
       const nextUrl = getNextPageUrl();
       sendResponse({ type: 'NEXT_PAGE', payload: nextUrl });
+      return true;
+    }
+    case 'GET_TOTAL_COUNT': {
+      sendResponse({
+        type: 'TOTAL_COUNT',
+        payload: { totalJobs: getTotalJobCount(), totalPages: getTotalPages() },
+      });
       return true;
     }
     case 'GET_STATE': {

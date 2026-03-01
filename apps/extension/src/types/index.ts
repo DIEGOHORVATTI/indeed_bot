@@ -168,6 +168,8 @@ export type MessageType =
   | 'STATUS_UPDATE'
   | 'GET_NEXT_PAGE'
   | 'NEXT_PAGE'
+  | 'GET_TOTAL_COUNT'
+  | 'TOTAL_COUNT'
   | 'GET_STATE'
   | 'SET_STATE'
   | 'START_BOT'
@@ -211,6 +213,10 @@ export interface BotStatus {
   currentSearchUrl?: string;
   currentSearchIndex?: number;
   totalSearchUrls?: number;
+  // Collection progress
+  currentPage?: number;
+  totalPages?: number;
+  estimatedTotalJobs?: number;
   log: LogEntry[];
 }
 

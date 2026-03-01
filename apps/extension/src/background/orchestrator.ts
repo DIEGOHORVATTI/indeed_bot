@@ -31,6 +31,9 @@ let stopRequested = false;
 let currentSearchUrl = '';
 let currentSearchIndex = 0;
 let totalSearchUrls = 0;
+let currentPage = 0;
+let totalPages = 0;
+let estimatedTotalJobs = 0;
 
 // ── Logging ──
 
@@ -58,6 +61,9 @@ export function getStatus(): BotStatus {
     currentSearchUrl,
     currentSearchIndex,
     totalSearchUrls,
+    currentPage,
+    totalPages,
+    estimatedTotalJobs,
     log: log.slice(-50),
   };
 }
@@ -72,12 +78,18 @@ function randomDelay(minMs: number, maxMs: number): Promise<void> {
   return delay(minMs + Math.random() * (maxMs - minMs));
 }
 
-async function sendToTab(tabId: number, message: Message): Promise<any> {
-  return new Promise((resolve) => {
-    chrome.tabs.sendMessage(tabId, message, (response) => {
-      resolve(response);
+async function sendToTab(tabId: number, message: Message, retries = 3): Promise<any> {
+  for (let i = 0; i < retries; i++) {
+    const response = await new Promise<any>((resolve) => {
+      chrome.tabs.sendMessage(tabId, message, (resp) => {
+        if (chrome.runtime.lastError) resolve(undefined);
+        else resolve(resp);
+      });
     });
-  });
+    if (response !== undefined) return response;
+    if (i < retries - 1) await delay(2000);
+  }
+  return undefined;
 }
 
 // ── Main Bot Loop ──
@@ -164,6 +176,9 @@ async function collectAndApply(): Promise<void> {
     const batchStartIndex = jobs.length;
     let pageUrl: string | null = searchUrl;
     let pageNum = 1;
+    currentPage = 0;
+    totalPages = 0;
+    estimatedTotalJobs = 0;
 
     while (pageUrl && !stopRequested) {
       // Navigate to search page
@@ -177,7 +192,19 @@ async function collectAndApply(): Promise<void> {
       await waitForTabLoad(botTabId, 15000);
       await delay(2000);
 
+      currentPage = pageNum;
       broadcastStatus();
+
+      // On first page, get total job count and pages
+      if (pageNum === 1) {
+        const countResp = await sendToTab(botTabId, { type: 'GET_TOTAL_COUNT' });
+        if (countResp?.payload) {
+          estimatedTotalJobs = countResp.payload.totalJobs || 0;
+          totalPages = countResp.payload.totalPages || 0;
+          addLog('info', `Found ~${estimatedTotalJobs} jobs across ${totalPages} page(s)`);
+          broadcastStatus();
+        }
+      }
 
       const response = await sendToTab(botTabId, { type: 'COLLECT_LINKS' });
       const links: { url: string; jobKey: string }[] = response?.payload || [];
@@ -200,7 +227,9 @@ async function collectAndApply(): Promise<void> {
 
       const skipped = links.length - newLinks.length;
       const totalNew = jobs.length - batchStartIndex;
-      addLog('info', `Page ${pageNum}: +${newLinks.length} new${skipped ? ` (${skipped} known)` : ''} — ${totalNew} total collected`);
+      const pageInfo = totalPages > 0 ? ` (page ${pageNum}/${totalPages})` : '';
+      const totalInfo = estimatedTotalJobs > 0 ? ` — ${totalNew}/${estimatedTotalJobs}` : ` — ${totalNew} total`;
+      addLog('info', `Page ${pageNum}${pageInfo}: +${newLinks.length} new${skipped ? ` (${skipped} known)` : ''}${totalInfo}`);
       broadcastStatus();
 
       // Check for next page

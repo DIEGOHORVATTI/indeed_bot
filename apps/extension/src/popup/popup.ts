@@ -67,20 +67,38 @@ function updateUI(status: BotStatus): void {
 
   // Progress bar & link info
   const isActive = status.state !== 'idle';
-  if (isActive && status.totalJobs > 0) {
+  if (isActive && (status.totalJobs > 0 || status.state === 'collecting')) {
     progressSection.style.display = 'block';
-    const processed = status.appliedCount + status.skippedCount + status.failedCount;
-    const pct = Math.round((processed / status.totalJobs) * 100);
-    progressFill.style.width = `${pct}%`;
 
-    if (status.totalSearchUrls && status.totalSearchUrls > 1 && status.currentSearchUrl) {
-      const idx = (status.currentSearchIndex ?? 0) + 1;
-      const truncUrl = status.currentSearchUrl.length > 45
-        ? status.currentSearchUrl.substring(0, 45) + '...'
-        : status.currentSearchUrl;
-      linkInfo.innerHTML = `<strong>Link ${idx}/${status.totalSearchUrls}</strong> — ${truncUrl}`;
+    if (status.state === 'collecting') {
+      // Collection phase: show page progress and jobs found
+      const pageInfo = status.totalPages
+        ? `Page ${status.currentPage || 1}/${status.totalPages}`
+        : `Page ${status.currentPage || 1}`;
+      const jobInfo = status.estimatedTotalJobs
+        ? `${status.totalJobs}/${status.estimatedTotalJobs} jobs`
+        : `${status.totalJobs} jobs`;
+      linkInfo.innerHTML = `<strong>Collecting:</strong> ${pageInfo} — ${jobInfo} found`;
+
+      const pct = status.estimatedTotalJobs
+        ? Math.round((status.totalJobs / status.estimatedTotalJobs) * 100)
+        : 0;
+      progressFill.style.width = `${pct}%`;
     } else {
-      linkInfo.innerHTML = '';
+      // Applying phase: show application progress
+      const processed = status.appliedCount + status.skippedCount + status.failedCount;
+      const pct = status.totalJobs > 0 ? Math.round((processed / status.totalJobs) * 100) : 0;
+      progressFill.style.width = `${pct}%`;
+
+      if (status.totalSearchUrls && status.totalSearchUrls > 1 && status.currentSearchUrl) {
+        const idx = (status.currentSearchIndex ?? 0) + 1;
+        const truncUrl = status.currentSearchUrl.length > 45
+          ? status.currentSearchUrl.substring(0, 45) + '...'
+          : status.currentSearchUrl;
+        linkInfo.innerHTML = `<strong>Link ${idx}/${status.totalSearchUrls}</strong> — ${truncUrl}`;
+      } else {
+        linkInfo.innerHTML = '';
+      }
     }
   } else {
     progressSection.style.display = 'none';
