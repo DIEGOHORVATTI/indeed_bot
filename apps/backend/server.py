@@ -2,7 +2,7 @@
 Backend API server for the Indeed Auto Apply Chrome extension.
 
 Proxies AI requests to Claude CLI so the extension never needs API keys.
-Run: uvicorn app.server:app --port 3000
+Run: uvicorn apps.backend.server:app --port 3000
 """
 
 from __future__ import annotations
@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-import sys
 import tempfile
 
 from fastapi import FastAPI, HTTPException
@@ -247,7 +246,7 @@ CRITICAL: Return ONLY the raw JSON. No markdown, no explanation, no wrapping."""
 @app.post("/api/generate-pdf")
 async def generate_pdf(req: PdfRequest):
     """Convert HTML to PDF using Playwright. Saves a copy to output/ if filename provided."""
-    from app.services.pdf import html_to_pdf
+    from apps.backend.pdf import html_to_pdf
 
     try:
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:

@@ -208,12 +208,8 @@ __marimo__/
 
 # Node / Extension
 node_modules/
-extension/dist/
+apps/extension/dist/
 
-# indeed_bot specific files
-logs.txt
-user_data_dir/
+# Runtime artifacts
 output/
-applied_jobs.json
-job_registry.json
 .DS_Store
