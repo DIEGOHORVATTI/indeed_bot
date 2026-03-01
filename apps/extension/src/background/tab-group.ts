@@ -37,27 +37,23 @@ export async function navigateTab(tabId: number, url: string): Promise<void> {
 
 export async function waitForTabLoad(tabId: number, timeoutMs = 15000): Promise<boolean> {
   return new Promise(resolve => {
-    const deadline = Date.now() + timeoutMs;
+    let resolved = false;
+
+    const done = (result: boolean) => {
+      if (resolved) return;
+      resolved = true;
+      chrome.tabs.onUpdated.removeListener(listener);
+      resolve(result);
+    };
 
     const listener = (id: number, info: chrome.tabs.TabChangeInfo) => {
       if (id === tabId && info.status === 'complete') {
-        chrome.tabs.onUpdated.removeListener(listener);
-        resolve(true);
+        done(true);
       }
     };
 
     chrome.tabs.onUpdated.addListener(listener);
-
-    // Timeout fallback
-    const check = () => {
-      if (Date.now() > deadline) {
-        chrome.tabs.onUpdated.removeListener(listener);
-        resolve(false);
-      } else {
-        setTimeout(check, 500);
-      }
-    };
-    setTimeout(check, 500);
+    setTimeout(() => done(false), timeoutMs);
   });
 }
 

@@ -14,6 +14,10 @@ import { notifyUserInput } from '../utils/notifications';
 const registry = new JobRegistry();
 const cache = new AnswerCache();
 
+export function getCache(): AnswerCache {
+  return cache;
+}
+
 let state: BotState = 'idle';
 let appliedCount = 0;
 let skippedCount = 0;

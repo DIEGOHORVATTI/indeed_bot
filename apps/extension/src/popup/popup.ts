@@ -110,7 +110,11 @@ function updateUI(status: BotStatus): void {
     const div = document.createElement('div');
     div.className = `log-entry ${entry.level}`;
     const time = new Date(entry.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    div.innerHTML = `<span class="time">${time}</span>${entry.message}`;
+    const timeSpan = document.createElement('span');
+    timeSpan.className = 'time';
+    timeSpan.textContent = time;
+    div.appendChild(timeSpan);
+    div.appendChild(document.createTextNode(entry.message));
     logContainer.appendChild(div);
   }
   logContainer.scrollTop = logContainer.scrollHeight;

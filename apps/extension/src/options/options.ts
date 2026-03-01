@@ -61,12 +61,12 @@ async function loadSettings(): Promise<void> {
 // ── Save Settings ──
 
 async function saveSettings(): Promise<void> {
-  // Preserve backendUrl from existing settings (hidden from UI)
+  // Preserve fields hidden from UI
   const existing = await chrome.storage.local.get('settings');
-  const backendUrl = existing.settings?.backendUrl || DEFAULT_SETTINGS.backendUrl;
+  const prev = existing.settings || {};
 
   const settings: Settings = {
-    backendUrl,
+    backendUrl: prev.backendUrl || DEFAULT_SETTINGS.backendUrl,
     searchUrls: fields.searchUrls.value.split('\n').map(u => u.trim()).filter(Boolean),
     language: fields.language.value,
     maxApplies: parseInt(fields.maxApplies.value) || 0,
@@ -78,6 +78,8 @@ async function saveSettings(): Promise<void> {
       baseProfile: fields.baseProfile.value,
     },
     profile: {
+      ...DEFAULT_SETTINGS.profile,
+      ...prev.profile,
       name: fields.profileName.value.trim(),
       email: fields.profileEmail.value.trim(),
       phone: fields.profilePhone.value.trim(),
@@ -86,16 +88,10 @@ async function saveSettings(): Promise<void> {
       city: fields.profileCity.value.trim(),
       state: fields.profileState.value.trim(),
       cep: fields.profileCep.value.trim(),
-      country: 'Brasil',
       linkedin: fields.profileLinkedin.value.trim(),
       github: fields.profileGithub.value.trim(),
       instagram: fields.profileInstagram.value.trim(),
       portfolio: fields.profilePortfolio.value.trim(),
-      birthDate: '',
-      rg: '',
-      cpf: '',
-      motherName: '',
-      fatherName: '',
     },
   };
 

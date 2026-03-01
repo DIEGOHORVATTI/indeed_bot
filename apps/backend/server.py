@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import tempfile
 
@@ -21,7 +22,7 @@ app = FastAPI(title="Indeed Bot Backend")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
     allow_methods=["POST", "GET"],
     allow_headers=["Content-Type"],
 )
@@ -248,6 +249,7 @@ async def generate_pdf(req: PdfRequest):
     """Convert HTML to PDF using Playwright. Saves a copy to output/ if filename provided."""
     from apps.backend.pdf import html_to_pdf
 
+    tmp_path: str | None = None
     try:
         with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
             tmp_path = tmp.name
@@ -257,23 +259,27 @@ async def generate_pdf(req: PdfRequest):
         with open(tmp_path, "rb") as f:
             pdf_bytes = f.read()
 
-        os.unlink(tmp_path)
+        # Sanitize filename to prevent path traversal
+        safe_filename = re.sub(r'[^\w\s\-.]', '', os.path.basename(req.filename or 'document.pdf')) or 'document.pdf'
 
         # Save a copy to output/ directory
         if req.filename:
             output_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "output")
             os.makedirs(output_dir, exist_ok=True)
-            output_path = os.path.join(output_dir, req.filename)
+            output_path = os.path.join(output_dir, safe_filename)
             with open(output_path, "wb") as f:
                 f.write(pdf_bytes)
 
         return Response(
             content=pdf_bytes,
             media_type="application/pdf",
-            headers={"Content-Disposition": f"attachment; filename={req.filename or 'document.pdf'}"},
+            headers={"Content-Disposition": f'attachment; filename="{safe_filename}"'},
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"PDF generation failed: {exc}")
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
 
 
 @app.get("/health")

@@ -26,4 +26,4 @@ Homepage = "https://github.com/TechWithTy/indeed_bot"
 package = false
 
 [tool.hatch.build.targets.wheel]
-packages = ["apps"]
+packages = ["apps/backend"]

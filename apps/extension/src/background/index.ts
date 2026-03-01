@@ -4,21 +4,24 @@
  */
 
 import { Message, Settings, DEFAULT_SETTINGS } from '../types';
-import { startBot, stopBot, pauseBot, resumeBot, getStatus, addLog } from './orchestrator';
-import { AnswerCache } from '../services/answer-cache';
+import { startBot, stopBot, pauseBot, resumeBot, getStatus, addLog, getCache } from './orchestrator';
 import { askClaudeForAnswer } from '../services/claude';
 import { setupNotificationListeners } from '../utils/notifications';
 
 // Initialize notification listeners (guarded for availability)
 setupNotificationListeners();
 
-const cache = new AnswerCache();
-
 // ── Settings Management ──
 
 async function getSettings(): Promise<Settings> {
   const data = await chrome.storage.local.get('settings');
-  return { ...DEFAULT_SETTINGS, ...data.settings };
+  const s = data.settings || {};
+  return {
+    ...DEFAULT_SETTINGS,
+    ...s,
+    personalization: { ...DEFAULT_SETTINGS.personalization, ...s.personalization },
+    profile: { ...DEFAULT_SETTINGS.profile, ...s.profile },
+  };
 }
 
 // ── Message Router ──
@@ -69,14 +72,14 @@ async function handleMessage(
 
       // Cache store request
       if (storeCache) {
-        await cache.store(label, inputType, answer, options);
+        await getCache().store(label, inputType, answer, options);
         sendResponse({ ok: true });
         return;
       }
 
       // Cache lookup request
       if (cacheOnly) {
-        const cached = await cache.lookup(label, inputType, options);
+        const cached = await getCache().lookup(label, inputType, options);
         sendResponse({ payload: { answer: cached } });
         return;
       }
@@ -85,7 +88,7 @@ async function handleMessage(
       if (question) {
         // Skip cache when retrying with error context (previous cached answer was wrong)
         if (!errorContext) {
-          const cached = await cache.lookup(question, 'text', options);
+          const cached = await getCache().lookup(question, 'text', options);
           if (cached) {
             sendResponse({ payload: { answer: cached } });
             return;
@@ -106,7 +109,7 @@ async function handleMessage(
         );
 
         if (claudeAnswer) {
-          await cache.store(question, 'text', claudeAnswer, options);
+          await getCache().store(question, 'text', claudeAnswer, options);
         }
 
         sendResponse({ payload: { answer: claudeAnswer } });
@@ -135,17 +138,19 @@ async function handleMessage(
       const urlMatch = slug.match(/linkedin\.com\/in\/([^/?#]+)/);
       if (urlMatch) slug = urlMatch[1];
 
+      let tabId: number | undefined;
       try {
         // Open LinkedIn profile in a new tab
         const tab = await chrome.tabs.create({
           url: `https://www.linkedin.com/in/${slug}/`,
           active: false,
         });
+        tabId = tab.id;
 
         // Wait for page to load
         await new Promise<void>((resolve) => {
-          const listener = (tabId: number, info: chrome.tabs.TabChangeInfo) => {
-            if (tabId === tab.id && info.status === 'complete') {
+          const listener = (id: number, info: chrome.tabs.TabChangeInfo) => {
+            if (id === tabId && info.status === 'complete') {
               chrome.tabs.onUpdated.removeListener(listener);
               resolve();
             }
@@ -160,7 +165,7 @@ async function handleMessage(
 
         // Execute scraping script in the tab
         const results = await chrome.scripting.executeScript({
-          target: { tabId: tab.id! },
+          target: { tabId: tabId! },
           func: () => {
             const txt = (el: Element | null) => el?.textContent?.trim() || '';
 
@@ -265,9 +270,6 @@ async function handleMessage(
           },
         });
 
-        // Close the tab
-        if (tab.id) await chrome.tabs.remove(tab.id);
-
         const result = results?.[0]?.result;
         if (!result || (!result.name && !result.jsonLd)) {
           sendResponse({ error: 'Could not extract profile data. Make sure you are logged into LinkedIn.' });
@@ -331,6 +333,10 @@ async function handleMessage(
         sendResponse({ payload: profileData });
       } catch (err: any) {
         sendResponse({ error: err.message || 'Failed to scrape LinkedIn' });
+      } finally {
+        if (tabId) {
+          try { await chrome.tabs.remove(tabId); } catch { /* tab may already be closed */ }
+        }
       }
       break;
     }
