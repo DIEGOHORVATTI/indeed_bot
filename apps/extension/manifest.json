@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Indeed Auto Apply",
-  "version": "0.2.17",
+  "version": "0.2.27",
   "description": "Auto-apply to Indeed jobs with AI-tailored CV and smart form filling",
   "permissions": [
     "tabs",
@@ -9,10 +9,12 @@
     "storage",
     "notifications",
     "alarms",
-    "activeTab"
+    "activeTab",
+    "scripting"
   ],
   "host_permissions": [
     "*://*.indeed.com/*",
+    "*://*.linkedin.com/*",
     "http://localhost:*/*"
   ],
   "background": {

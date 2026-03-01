@@ -80,6 +80,22 @@
     }
     .btn-primary { background: #16213e; color: #fff; }
     .btn-primary:hover { background: #1a2a4a; }
+    .btn-secondary { background: #e9ecef; color: #16213e; }
+    .btn-secondary:hover { background: #dee2e6; }
+    .import-row {
+      display: flex;
+      gap: 8px;
+      align-items: flex-end;
+      margin-bottom: 16px;
+    }
+    .import-row .field { flex: 1; margin-bottom: 0; }
+    .import-status {
+      font-size: 12px;
+      margin-top: 4px;
+      min-height: 16px;
+    }
+    .import-status.error { color: #dc3545; }
+    .import-status.success { color: #198754; }
     .actions {
       display: flex;
       gap: 12px;
@@ -109,6 +125,19 @@
   <p class="subtitle">Configure your bot settings</p>
 
   <div class="section">
+    <h2>Quick Setup</h2>
+    <div class="hint" style="margin-bottom: 12px">Import your LinkedIn profile to auto-fill CV, cover letter, and personal data.</div>
+    <div class="import-row">
+      <div class="field">
+        <label for="linkedin-username">LinkedIn username or URL</label>
+        <input type="text" id="linkedin-username" placeholder="diego-horvatti or https://linkedin.com/in/...">
+      </div>
+      <button class="btn btn-secondary" id="btn-import-linkedin">Import</button>
+    </div>
+    <div class="import-status" id="import-status"></div>
+  </div>
+
+  <div class="section">
     <h2>Search</h2>
     <div class="field">
       <label for="search-urls">Search URLs (one per line)</label>
@@ -129,8 +158,8 @@
       </div>
       <div class="field">
         <label for="max-applies">Max Applies</label>
-        <div class="hint">0 = unlimited</div>
         <input type="number" id="max-applies" min="0" value="0">
+        <div class="hint">0 = unlimited</div>
       </div>
     </div>
     <div class="field">
@@ -154,14 +183,32 @@
         <input type="text" id="profile-email">
       </div>
     </div>
+    <div class="field">
+      <label for="profile-phone">Phone</label>
+      <input type="text" id="profile-phone">
+    </div>
     <div class="row">
-      <div class="field">
-        <label for="profile-phone">Phone</label>
-        <input type="text" id="profile-phone">
+      <div class="field" style="flex:2">
+        <label for="profile-street">Rua + número</label>
+        <input type="text" id="profile-street" placeholder="Rua Exemplo, 123">
       </div>
       <div class="field">
-        <label for="profile-location">Location</label>
-        <input type="text" id="profile-location">
+        <label for="profile-neighborhood">Bairro</label>
+        <input type="text" id="profile-neighborhood">
+      </div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label for="profile-city">Cidade</label>
+        <input type="text" id="profile-city">
+      </div>
+      <div class="field">
+        <label for="profile-state">Estado</label>
+        <input type="text" id="profile-state">
+      </div>
+      <div class="field">
+        <label for="profile-cep">CEP</label>
+        <input type="text" id="profile-cep" placeholder="00000-000">
       </div>
     </div>
     <div class="row">

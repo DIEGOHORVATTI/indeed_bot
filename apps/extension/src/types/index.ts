@@ -15,7 +15,14 @@ export interface ProfileSettings {
   name: string;
   email: string;
   phone: string;
-  location: string;
+  // Address (segmented)
+  street: string;       // Rua + número
+  neighborhood: string; // Bairro
+  city: string;
+  state: string;
+  cep: string;
+  country: string;
+  // Links
   linkedin: string;
   github: string;
   instagram: string;
@@ -26,9 +33,6 @@ export interface ProfileSettings {
   cpf: string;
   motherName: string;
   fatherName: string;
-  address: string;      // Full address
-  cep: string;
-  country: string;
 }
 
 export interface Settings {
@@ -67,7 +71,10 @@ export const DEFAULT_SETTINGS: Settings = {
 - Nacionalidade:
 - Estado civil:
 - CEP:
-- Endereço completo (rua, número, bairro, cidade, estado):
+- Rua (com número):
+- Bairro:
+- Cidade:
+- Estado:
 - Nome completo da mãe:
 - Nome completo do pai:
 - Gênero:
@@ -126,7 +133,12 @@ export const DEFAULT_SETTINGS: Settings = {
     name: '',
     email: '',
     phone: '',
-    location: '',
+    street: '',
+    neighborhood: '',
+    city: '',
+    state: '',
+    cep: '',
+    country: 'Brasil',
     linkedin: '',
     github: '',
     instagram: '',
@@ -136,9 +148,6 @@ export const DEFAULT_SETTINGS: Settings = {
     cpf: '',
     motherName: '',
     fatherName: '',
-    address: '',
-    cep: '',
-    country: 'Brasil',
   },
 };
 
@@ -165,7 +174,8 @@ export type MessageType =
   | 'STOP_BOT'
   | 'PAUSE_BOT'
   | 'RESUME_BOT'
-  | 'ADD_LOG';
+  | 'ADD_LOG'
+  | 'SCRAPE_LINKEDIN';
 
 export interface Message {
   type: MessageType;

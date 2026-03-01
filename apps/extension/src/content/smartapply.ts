@@ -849,13 +849,30 @@ async function handleQuestionnaire(): Promise<{ needsUserInput: boolean; fieldLa
     if (optionTexts.length > 0) {
       const answer = await askClaude(label, optionTexts);
       if (answer) {
-        const idx = optionTexts.indexOf(answer);
+        // Exact match first, then case-insensitive, then partial match
+        let idx = optionTexts.indexOf(answer);
+        if (idx < 0) {
+          const lower = answer.toLowerCase().trim();
+          idx = optionTexts.findIndex(t => t.toLowerCase().trim() === lower);
+        }
+        if (idx < 0) {
+          const lower = answer.toLowerCase().trim();
+          idx = optionTexts.findIndex(t =>
+            t.toLowerCase().trim().includes(lower) || lower.includes(t.toLowerCase().trim())
+          );
+        }
         if (idx >= 0) {
           selectOption(sel, optionValues[idx]);
-          log(`✅ Selected: "${answer}" for "${label}"`);
+          log(`✅ Selected: "${optionTexts[idx]}" for "${label}"`);
+        } else {
+          // Fallback: select first non-placeholder option
+          selectOption(sel, optionValues[0]);
+          log(`⚠️ No match for "${answer}" in select "${label}", used first option: "${optionTexts[0]}"`);
         }
       } else {
-        return { needsUserInput: true, fieldLabel: label };
+        // No Claude answer — select first option as fallback
+        selectOption(sel, optionValues[0]);
+        log(`⚠️ No Claude answer for select "${label}", used first option: "${optionTexts[0]}"`);
       }
     } else if (optionValues.length > 0) {
       selectOption(sel, optionValues[0]);
@@ -1117,13 +1134,35 @@ async function handlePostClickErrors(pageErrors: string[]): Promise<'fixed' | 'f
       `This select field has error: "Escolha uma opção para continuar". Page errors: ${pageErrors.join('; ')}. Pick the correct option.`
     );
     if (answer) {
-      const idx = optionTexts.indexOf(answer);
+      let idx = optionTexts.indexOf(answer);
+      if (idx < 0) {
+        const lower = answer.toLowerCase().trim();
+        idx = optionTexts.findIndex(t => t.toLowerCase().trim() === lower);
+      }
+      if (idx < 0) {
+        const lower = answer.toLowerCase().trim();
+        idx = optionTexts.findIndex(t =>
+          t.toLowerCase().trim().includes(lower) || lower.includes(t.toLowerCase().trim())
+        );
+      }
       if (idx >= 0) {
         selectOption(sel, optionValues[idx]);
-        log(`🔧 Fixed select "${label}" with: "${answer}"`);
+        log(`🔧 Fixed select "${label}" with: "${optionTexts[idx]}"`);
+        anyFixed = true;
+        await waitMs(300);
+      } else {
+        // Fallback: first option
+        selectOption(sel, optionValues[0]);
+        log(`🔧 No match for "${answer}" in select "${label}", used first: "${optionTexts[0]}"`);
         anyFixed = true;
         await waitMs(300);
       }
+    } else {
+      // No Claude answer — use first option
+      selectOption(sel, optionValues[0]);
+      log(`🔧 No answer for select "${label}", used first: "${optionTexts[0]}"`);
+      anyFixed = true;
+      await waitMs(300);
     }
   }
 

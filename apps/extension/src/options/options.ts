@@ -19,7 +19,11 @@ const fields = {
   profileName: $('profile-name'),
   profileEmail: $('profile-email'),
   profilePhone: $('profile-phone'),
-  profileLocation: $('profile-location'),
+  profileStreet: $('profile-street'),
+  profileNeighborhood: $('profile-neighborhood'),
+  profileCity: $('profile-city'),
+  profileState: $('profile-state'),
+  profileCep: $('profile-cep'),
   profileLinkedin: $('profile-linkedin'),
   profileGithub: $('profile-github'),
   profileInstagram: $('profile-instagram'),
@@ -43,7 +47,11 @@ async function loadSettings(): Promise<void> {
   fields.profileName.value = s.profile.name;
   fields.profileEmail.value = s.profile.email;
   fields.profilePhone.value = s.profile.phone;
-  fields.profileLocation.value = s.profile.location;
+  fields.profileStreet.value = s.profile.street;
+  fields.profileNeighborhood.value = s.profile.neighborhood;
+  fields.profileCity.value = s.profile.city;
+  fields.profileState.value = s.profile.state;
+  fields.profileCep.value = s.profile.cep;
   fields.profileLinkedin.value = s.profile.linkedin;
   fields.profileGithub.value = s.profile.github;
   fields.profileInstagram.value = s.profile.instagram;
@@ -73,19 +81,21 @@ async function saveSettings(): Promise<void> {
       name: fields.profileName.value.trim(),
       email: fields.profileEmail.value.trim(),
       phone: fields.profilePhone.value.trim(),
-      location: fields.profileLocation.value.trim(),
+      street: fields.profileStreet.value.trim(),
+      neighborhood: fields.profileNeighborhood.value.trim(),
+      city: fields.profileCity.value.trim(),
+      state: fields.profileState.value.trim(),
+      cep: fields.profileCep.value.trim(),
+      country: 'Brasil',
       linkedin: fields.profileLinkedin.value.trim(),
       github: fields.profileGithub.value.trim(),
       instagram: fields.profileInstagram.value.trim(),
       portfolio: fields.profilePortfolio.value.trim(),
       birthDate: '',
-      country: 'Brasil',
       rg: '',
       cpf: '',
       motherName: '',
       fatherName: '',
-      address: '',
-      cep: '',
     },
   };
 
@@ -97,7 +107,160 @@ async function saveSettings(): Promise<void> {
   setTimeout(() => msg.classList.remove('show'), 2000);
 }
 
+// ── LinkedIn Import ──
+
+async function importLinkedIn(): Promise<void> {
+  const usernameInput = $('linkedin-username');
+  const statusEl = document.getElementById('import-status')!;
+  const btn = document.getElementById('btn-import-linkedin') as HTMLButtonElement;
+  const username = usernameInput.value.trim();
+
+  if (!username) {
+    statusEl.textContent = 'Enter a LinkedIn username or URL';
+    statusEl.className = 'import-status error';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Importing...';
+  statusEl.textContent = 'Opening LinkedIn profile...';
+  statusEl.className = 'import-status';
+
+  try {
+    const response = await new Promise<any>((resolve) => {
+      chrome.runtime.sendMessage(
+        { type: 'SCRAPE_LINKEDIN', payload: { username } },
+        resolve,
+      );
+    });
+
+    if (response?.error) {
+      throw new Error(response.error);
+    }
+
+    const data = response?.payload;
+    if (!data) {
+      throw new Error('No data returned');
+    }
+
+    // ── Fill Profile fields ──
+    if (data.name) fields.profileName.value = data.name;
+    if (data.city) fields.profileCity.value = data.city;
+    if (data.state) fields.profileState.value = data.state;
+    if (data.linkedin) fields.profileLinkedin.value = data.linkedin;
+    if (data.github) fields.profileGithub.value = data.github;
+    if (data.instagram) fields.profileInstagram.value = data.instagram;
+    if (data.portfolio) fields.profilePortfolio.value = data.portfolio;
+
+    // ── Generate Base CV (Markdown) ──
+    const cvLines: string[] = [];
+    cvLines.push(`# ${data.name}`);
+    if (data.headline) cvLines.push(`**${data.headline}**\n`);
+
+    if (data.about) {
+      cvLines.push('## Resumo Profissional');
+      cvLines.push(data.about + '\n');
+    }
+
+    if (data.experience?.length) {
+      cvLines.push('## Experiência Profissional');
+      for (const job of data.experience) {
+        cvLines.push(`### ${job.title}`);
+        const meta = [job.company, job.dates].filter(Boolean).join(' | ');
+        if (meta) cvLines.push(`*${meta}*`);
+        if (job.description) cvLines.push(job.description);
+        cvLines.push('');
+      }
+    }
+
+    if (data.education?.length) {
+      cvLines.push('## Formação');
+      for (const edu of data.education) {
+        const line = [edu.degree, edu.school, edu.dates].filter(Boolean).join(' — ');
+        cvLines.push(`- ${line}`);
+      }
+      cvLines.push('');
+    }
+
+    if (data.skills?.length) {
+      cvLines.push('## Competências');
+      cvLines.push(data.skills.join(', ') + '\n');
+    }
+
+    if (data.certifications?.length) {
+      cvLines.push('## Certificações');
+      for (const cert of data.certifications) {
+        const line = [cert.name, cert.issuer, cert.date].filter(Boolean).join(' — ');
+        cvLines.push(`- ${line}`);
+      }
+      cvLines.push('');
+    }
+
+    if (data.languages?.length) {
+      cvLines.push('## Idiomas');
+      for (const lang of data.languages) {
+        cvLines.push(`- ${lang.name}${lang.level ? ` (${lang.level})` : ''}`);
+      }
+      cvLines.push('');
+    }
+
+    if (cvLines.length > 2) {
+      fields.baseCv.value = cvLines.join('\n');
+    }
+
+    // ── Generate Base Cover Letter (Markdown) ──
+    if (data.name && data.headline) {
+      const coverLines = [
+        `Prezado(a) Recrutador(a),\n`,
+        `Meu nome é ${data.name} e sou ${data.headline}.`,
+      ];
+      if (data.about) {
+        const firstSentence = data.about.split('.')[0] + '.';
+        coverLines.push(firstSentence);
+      }
+      if (data.experience?.length) {
+        const latest = data.experience[0];
+        coverLines.push(`Atualmente atuo como ${latest.title}${latest.company ? ` na ${latest.company}` : ''}.`);
+      }
+      coverLines.push(
+        `\nEstou à disposição para uma conversa e posso contribuir significativamente para o sucesso da equipe.\n`,
+        `Atenciosamente,`,
+        data.name,
+      );
+      fields.baseCover.value = coverLines.join('\n');
+    }
+
+    // ── Fill Profile / Personal Data markdown ──
+    const currentProfile = fields.baseProfile.value || DEFAULT_SETTINGS.personalization.baseProfile;
+    const replacements: Record<string, string> = {
+      'Nome completo:': `Nome completo: ${data.name || ''}`,
+      'LinkedIn:': `LinkedIn: ${data.linkedin || ''}`,
+      'GitHub:': `GitHub: ${data.github || ''}`,
+      'Portfolio/Website:': `Portfolio/Website: ${data.portfolio || ''}`,
+      'Instagram:': `Instagram: ${data.instagram || ''}`,
+      'Cidade:': `Cidade: ${data.city || ''}`,
+      'Estado:': `Estado: ${data.state || ''}`,
+    };
+    let updatedProfile = currentProfile;
+    for (const [key, value] of Object.entries(replacements)) {
+      const regex = new RegExp(`^(- ${key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}).*$`, 'm');
+      updatedProfile = updatedProfile.replace(regex, `- ${value}`);
+    }
+    fields.baseProfile.value = updatedProfile;
+
+    statusEl.textContent = 'Profile imported! Review all fields and click Save.';
+    statusEl.className = 'import-status success';
+  } catch (err: any) {
+    statusEl.textContent = err.message || 'Failed to import';
+    statusEl.className = 'import-status error';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Import';
+  }
+}
+
 // ── Init ──
 
 loadSettings();
 document.getElementById('btn-save')!.addEventListener('click', saveSettings);
+document.getElementById('btn-import-linkedin')!.addEventListener('click', importLinkedIn);

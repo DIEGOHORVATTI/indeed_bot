@@ -135,10 +135,26 @@ export function fillInput(el: HTMLInputElement | HTMLTextAreaElement, value: str
   el.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
-/** Select an option in a <select> element by value. */
+/** Select an option in a <select> element by value, with React compatibility. */
 export function selectOption(sel: HTMLSelectElement, value: string): void {
-  sel.value = value;
+  // Use native setter to bypass React controlled components
+  const nativeSetter = Object.getOwnPropertyDescriptor(
+    HTMLSelectElement.prototype, 'value'
+  )?.set;
+
+  if (nativeSetter) {
+    nativeSetter.call(sel, value);
+  } else {
+    sel.value = value;
+  }
+
+  sel.dispatchEvent(new Event('input', { bubbles: true }));
   sel.dispatchEvent(new Event('change', { bubbles: true }));
+
+  // Also remove aria-invalid if present
+  if (sel.getAttribute('aria-invalid') === 'true') {
+    sel.removeAttribute('aria-invalid');
+  }
 }
 
 /**

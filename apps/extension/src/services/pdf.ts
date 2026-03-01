@@ -34,7 +34,8 @@ function buildContactHtml(profile: ProfileSettings): string {
   if (profile.linkedin) parts.push(`<a href="${profile.linkedin}">LinkedIn</a>`);
   if (profile.github) parts.push(`<a href="${profile.github}">GitHub</a>`);
   if (profile.portfolio) parts.push(`<a href="${profile.portfolio}">Portfolio</a>`);
-  parts.push(profile.location);
+  const locationParts = [profile.city, profile.state].filter(Boolean);
+  if (locationParts.length) parts.push(locationParts.join(', '));
   return parts.filter(Boolean).join(SEP);
 }
 
@@ -117,7 +118,7 @@ export function fillCoverTemplate(data: TailoredContent, profile?: ProfileSettin
 
   // Date
   const now = new Date();
-  const city = profile?.location?.split(',')[0]?.trim() || '';
+  const city = profile?.city || '';
   const monthsPt = ['', 'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
     'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
   const dateStr = city ? `${city}, ${now.getDate()} de ${monthsPt[now.getMonth() + 1]} de ${now.getFullYear()}` : '';
@@ -146,7 +147,7 @@ export function fillCvWithCoverTemplate(data: TailoredContent, profile?: Profile
 
   // Date
   const now = new Date();
-  const city = profile?.location?.split(',')[0]?.trim() || '';
+  const city = profile?.city || '';
   const monthsPt = ['', 'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
     'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
   const dateStr = city ? `${city}, ${now.getDate()} de ${monthsPt[now.getMonth() + 1]} de ${now.getFullYear()}` : '';
