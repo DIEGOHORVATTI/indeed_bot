@@ -11,13 +11,14 @@ import {
   APPLY_HEURISTIC_KEYWORDS,
   EXTERNAL_APPLY_KEYWORDS
 } from '../utils/i18n';
+import { TESTIDS, JOB_SCRAPING, URL_PATTERNS } from '../utils/constants';
 
 // ── URL Validation ──
 
 function isIndeedUrl(url: string): boolean {
   try {
     const host = new URL(url).hostname;
-    return host.endsWith('indeed.com');
+    return host.endsWith(URL_PATTERNS.indeedDomain);
   } catch {
     return false;
   }
@@ -42,7 +43,7 @@ interface CollectResult {
 
 function collectIndeedApplyLinks(): CollectResult {
   const links: { url: string; jobKey: string }[] = [];
-  const cards = document.querySelectorAll('div[data-testid="slider_item"]');
+  const cards = document.querySelectorAll(TESTIDS.jobCard);
 
   console.log(
     `[indeed-cs] collectLinks: found ${cards.length} job cards on ${window.location.href}`
@@ -54,13 +55,13 @@ function collectIndeedApplyLinks(): CollectResult {
   let noKey = 0;
 
   for (const card of cards) {
-    const indeedApply = card.querySelector('[data-testid="indeedApply"]');
+    const indeedApply = card.querySelector(TESTIDS.indeedApply);
     if (!indeedApply) {
       noApplyBtn++;
       continue;
     }
 
-    const linkEl = card.querySelector('a.jcs-JobTitle') as HTMLAnchorElement | null;
+    const linkEl = card.querySelector(TESTIDS.jobTitleLink) as HTMLAnchorElement | null;
     if (!linkEl) {
       noLink++;
       continue;
@@ -136,23 +137,9 @@ function findAndClickApply(): 'clicked' | 'external' | 'not_found' {
 // ── Job Scraping ──
 
 function scrapeJobDescription(): JobInfo {
-  const titleSelectors = [
-    'h1.jobsearch-JobInfoHeader-title',
-    'h1[data-testid="jobsearch-JobInfoHeader-title"]',
-    'h1[class*="JobInfoHeader"]',
-    'h2.jobTitle'
-  ];
-  const companySelectors = [
-    '[data-testid="inlineHeader-companyName"]',
-    '[data-testid="company-name"]',
-    'div[data-company-name] a',
-    'span.css-1cjkto6'
-  ];
-  const descSelectors = [
-    '#jobDescriptionText',
-    'div.jobsearch-JobComponent-description',
-    '[data-testid="jobDescriptionText"]'
-  ];
+  const titleSelectors = JOB_SCRAPING.title;
+  const companySelectors = JOB_SCRAPING.company;
+  const descSelectors = JOB_SCRAPING.description;
 
   function getText(selectors: string[]): string {
     for (const sel of selectors) {
@@ -174,11 +161,7 @@ function scrapeJobDescription(): JobInfo {
 
 function getTotalJobCount(): number | null {
   // Try search results count header (e.g., "74 vagas" / "74 jobs")
-  const countSelectors = [
-    '.jobsearch-JobCountAndSortPane-jobCount',
-    '[data-testid="jobCount"]',
-    '.jobsearch-ResultsList-header span'
-  ];
+  const countSelectors = JOB_SCRAPING.jobCount;
   for (const sel of countSelectors) {
     const el = document.querySelector(sel);
     if (el) {
@@ -197,12 +180,10 @@ function getTotalJobCount(): number | null {
 }
 
 function getTotalPages(): number {
-  const pageLinks = document.querySelectorAll(
-    'nav[role="navigation"] a[data-testid^="pagination-page-"]'
-  );
+  const pageLinks = document.querySelectorAll(JOB_SCRAPING.pagination);
   // Subtract 1 for the "next" link (pagination-page-next)
   const count = Array.from(pageLinks).filter(
-    (el) => el.getAttribute('data-testid') !== 'pagination-page-next'
+    (el) => el.getAttribute('data-testid') !== JOB_SCRAPING.paginationNext
   ).length;
   return Math.max(1, count);
 }
@@ -212,7 +193,7 @@ function getTotalPages(): number {
 async function waitForJobCards(timeoutMs = 10000): Promise<number> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
-    const cards = document.querySelectorAll('div[data-testid="slider_item"]');
+    const cards = document.querySelectorAll(TESTIDS.jobCard);
     if (cards.length > 0) return cards.length;
     await new Promise((r) => setTimeout(r, 500));
   }

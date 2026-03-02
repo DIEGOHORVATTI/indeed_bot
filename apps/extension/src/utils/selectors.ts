@@ -129,6 +129,19 @@ export function fillInput(el: HTMLInputElement | HTMLTextAreaElement, value: str
   el.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
+/**
+ * Build a unique CSS selector for a <select> element.
+ */
+function buildSelectSelector(sel: HTMLSelectElement): string {
+  const testId = sel.getAttribute('data-testid');
+  if (testId) return `[data-testid="${testId}"]`;
+  const selId = sel.getAttribute('id');
+  if (selId) return `#${CSS.escape(selId)}`;
+  const selName = sel.getAttribute('name');
+  if (selName) return `select[name="${selName}"]`;
+  return 'select';
+}
+
 /** Select an option in a <select> element by value, with React compatibility. */
 export function selectOption(sel: HTMLSelectElement, value: string): void {
   // Use native setter to bypass React controlled components
@@ -140,6 +153,10 @@ export function selectOption(sel: HTMLSelectElement, value: string): void {
     sel.value = value;
   }
 
+  // Invalidate React's value tracker so React sees the change
+  const tracker = (sel as any)._valueTracker;
+  if (tracker) tracker.setValue('');
+
   sel.dispatchEvent(new Event('input', { bubbles: true }));
   sel.dispatchEvent(new Event('change', { bubbles: true }));
 
@@ -147,6 +164,18 @@ export function selectOption(sel: HTMLSelectElement, value: string): void {
   if (sel.getAttribute('aria-invalid') === 'true') {
     sel.removeAttribute('aria-invalid');
   }
+
+  // Send to MAIN world content script to trigger React's onChange directly.
+  // Same pattern as setInputFiles — ISOLATED world can't access React internals.
+  const selector = buildSelectSelector(sel);
+  window.postMessage(
+    {
+      type: 'smartapply-select-option',
+      selector,
+      value
+    },
+    '*'
+  );
 }
 
 /**

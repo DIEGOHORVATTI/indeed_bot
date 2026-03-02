@@ -7,6 +7,18 @@
 
 import { Message, FloatingButtonSettings, DEFAULT_SETTINGS } from '../types';
 import {
+  TESTIDS,
+  FORM,
+  COVER_LETTER_DETECTION_SELECTORS,
+  COVER_LETTER_KEYWORDS,
+  URL_PATTERNS,
+  CONSENT_KEYWORDS,
+  ADDITIONAL_DOCS,
+  TIMING,
+  LIMITS,
+  FLOATING_BUTTON
+} from '../utils/constants';
+import {
   findFirst,
   findAll,
   clickFirst,
@@ -129,15 +141,12 @@ async function waitForFileInput(timeoutMs = 3000): Promise<HTMLInputElement | nu
 
 /** Find the resume file input (tries both new and old data-testid patterns). */
 function findResumeFileInput(): HTMLInputElement | null {
-  return document.querySelector<HTMLInputElement>(
-    '[data-testid="resume-selection-file-resume-upload-radio-card-file-input"], ' +
-      '[data-testid="resume-selection-file-resume-radio-card-file-input"]'
-  );
+  return document.querySelector<HTMLInputElement>(TESTIDS.resumeFileInput);
 }
 
 /** Check if there's already a CV loaded (ResumeOptionsMenu visible = existing CV). */
 function hasExistingResume(): boolean {
-  return !!document.querySelector('[data-testid="ResumeOptionsMenu"]');
+  return !!document.querySelector(TESTIDS.resumeOptionsMenu);
 }
 
 /**
@@ -147,7 +156,7 @@ function hasExistingResume(): boolean {
  */
 async function resetResumeForNewUpload(): Promise<HTMLInputElement | null> {
   const optionsMenuBtn = document.querySelector<HTMLButtonElement>(
-    '[data-testid="ResumeOptionsMenu"]'
+    TESTIDS.resumeOptionsMenu
   );
   if (!optionsMenuBtn) return null;
 
@@ -156,7 +165,7 @@ async function resetResumeForNewUpload(): Promise<HTMLInputElement | null> {
   await waitMs(800);
 
   const uploadMenuBtn = document.querySelector<HTMLButtonElement>(
-    '[data-testid="ResumeOptionsMenu-upload"]'
+    TESTIDS.resumeOptionsUpload
   );
   if (!uploadMenuBtn) {
     log('Resume: ResumeOptionsMenu-upload button not found');
@@ -199,9 +208,7 @@ async function resetResumeForNewUpload(): Promise<HTMLInputElement | null> {
 
 async function tryResumeSelectionUpload(file: File): Promise<boolean> {
   // Step 1: Ensure the "file resume" radio card is selected
-  const fileRadio = document.querySelector<HTMLInputElement>(
-    '[data-testid="resume-selection-file-resume-upload-radio-card-input"], [data-testid="resume-selection-file-resume-radio-card-input"]'
-  );
+  const fileRadio = document.querySelector<HTMLInputElement>(TESTIDS.resumeRadioCard);
   if (fileRadio && !fileRadio.checked) {
     log('Resume: selecting file resume radio card');
     fileRadio.click();
@@ -240,9 +247,7 @@ async function tryResumeSelectionUpload(file: File): Promise<boolean> {
   }
 
   // Step 3: Try "Selecionar arquivo" button with click intercept
-  const selectFileBtn = document.querySelector<HTMLButtonElement>(
-    '[data-testid="resume-selection-file-resume-upload-radio-card-button"], [data-testid="resume-selection-file-resume-radio-card-button"]'
-  );
+  const selectFileBtn = document.querySelector<HTMLButtonElement>(TESTIDS.resumeSelectFileBtn);
   if (selectFileBtn) {
     const currentInput = findResumeFileInput();
     if (currentInput) {
@@ -302,10 +307,8 @@ async function handleResumeStep(pdfData?: ArrayBuffer, pdfFilename?: string): Pr
 
   // Detect resume-selection page and use targeted approach first
   const isResumeSelectionPage =
-    window.location.href.includes('resume-selection') ||
-    !!document.querySelector(
-      '[data-testid*="resume-selection"], [class*="resume-selection"], [id*="resume-selection"]'
-    );
+    window.location.href.includes(URL_PATTERNS.resumeSelection) ||
+    !!document.querySelector(FORM.resumePageIndicators);
 
   if (isResumeSelectionPage) {
     log('Detected resume-selection page, using targeted approach');
@@ -356,7 +359,7 @@ async function handleResumeStep(pdfData?: ArrayBuffer, pdfFilename?: string): Pr
   }
 
   // Strategy 4: Scan ALL clickables for upload-related text
-  const allClickables = [...document.querySelectorAll('button, a, label, [role="button"]')];
+  const allClickables = [...document.querySelectorAll(FORM.allClickables)];
   const uploadKeywords = [
     'upload',
     'carregar',
@@ -494,12 +497,7 @@ async function handleCoverLetter(pdfData?: ArrayBuffer, pdfFilename?: string): P
   const file = new File([pdfData], pdfFilename, { type: 'application/pdf' });
 
   // Strategy 1: Direct file input for cover letter
-  const directInput = document.querySelector<HTMLInputElement>(
-    '[data-testid="CoverLetterInput"] input[type="file"], ' +
-      'input[accept*="pdf"][name*="cover"], ' +
-      '[data-testid*="coverLetter" i] input[type="file"], ' +
-      '[data-testid*="cover-letter" i] input[type="file"]'
-  );
+  const directInput = document.querySelector<HTMLInputElement>(FORM.coverLetterInputs);
   if (directInput) {
     log('Cover letter strategy 1: direct input found');
     setInputFiles(directInput, file);
@@ -520,15 +518,8 @@ async function handleCoverLetter(pdfData?: ArrayBuffer, pdfFilename?: string): P
   }
 
   // Strategy 3: Scan all clickables for cover letter keywords
-  const allClickables = [...document.querySelectorAll('button, a, label, [role="button"]')];
-  const coverKeywords = [
-    'cover letter',
-    'carta de apresentação',
-    'carta de apresentacao',
-    'lettre de motivation',
-    'anschreiben',
-    'carta de presentación'
-  ];
+  const allClickables = [...document.querySelectorAll(FORM.allClickables)];
+  const coverKeywords = COVER_LETTER_KEYWORDS;
   for (const el of allClickables) {
     if (!isVisible(el as Element)) continue;
     const text = (el.textContent || '').toLowerCase().trim();
@@ -553,18 +544,11 @@ async function handleCoverLetter(pdfData?: ArrayBuffer, pdfFilename?: string): P
  *  where the cover letter text will be auto-filled. */
 async function handleAdditionalDocuments(): Promise<boolean> {
   // Only act on the review page
-  if (!window.location.href.includes('review-module')) return false;
+  if (!window.location.href.includes(URL_PATTERNS.reviewModule)) return false;
 
   // Find the "Add" / "Adicionar" link/button near the additional/supporting documents section
-  const addKeywords = ['adicionar', 'add'];
-  const sectionKeywords = [
-    'documentos de apoio',
-    'supporting documents',
-    'additional documents',
-    'documentos adicionais',
-    'cover letter',
-    'carta de apresentação'
-  ];
+  const addKeywords = ADDITIONAL_DOCS.addKeywords;
+  const sectionKeywords = ADDITIONAL_DOCS.sectionKeywords;
 
   // Check if the section exists on the page
   const bodyText = document.body.innerText.toLowerCase();
@@ -602,20 +586,16 @@ async function handleAdditionalDocuments(): Promise<boolean> {
 /** Handle known Indeed wizard pages that don't have standard form fields. */
 async function handleSpecialPages(): Promise<boolean> {
   // Privacy settings: "Quer permitir que as empresas encontrem você?"
-  const privacyForm = document.querySelector('[data-testid="privacy-settings-form"]');
+  const privacyForm = document.querySelector(TESTIDS.privacyForm);
   if (privacyForm) {
     log('🔒 Special page: privacy-settings detected');
-    const optinRadio = document.querySelector<HTMLInputElement>(
-      '[data-testid="privacy-settings-optin-input"]'
-    );
+    const optinRadio = document.querySelector<HTMLInputElement>(TESTIDS.privacyOptin);
     if (optinRadio && !optinRadio.checked) {
       optinRadio.click();
       log('🔒 Clicked optin radio');
       await waitMs(300);
     }
-    const continueBtn = privacyForm.querySelector<HTMLButtonElement>(
-      '[data-testid="continue-button"]'
-    );
+    const continueBtn = privacyForm.querySelector<HTMLButtonElement>(TESTIDS.continueButton);
     if (continueBtn) {
       continueBtn.click();
       log('🔒 Clicked continue on privacy-settings');
@@ -624,12 +604,10 @@ async function handleSpecialPages(): Promise<boolean> {
   }
 
   // Additional-documents page: auto-select "Write a cover letter" radio if available
-  if (window.location.href.includes('additional-documents')) {
-    const coverLetterRadio = document.querySelector<HTMLInputElement>(
-      '[data-testid="cover-letter-radio-card-input"], input[name="cover-letter"][id*="cover-letter-radio-card"]'
-    );
+  if (window.location.href.includes(URL_PATTERNS.additionalDocuments)) {
+    const coverLetterRadio = document.querySelector<HTMLInputElement>(TESTIDS.coverLetterRadio);
     const noCoverLetterRadio = document.querySelector<HTMLInputElement>(
-      '[data-testid="no-cover-letter-radio-card-input"], input[name="cover-letter"][id*="no-cover-letter"]'
+      TESTIDS.noCoverLetterRadio
     );
     if (coverLetterRadio && !coverLetterRadio.checked) {
       coverLetterRadio.click();
@@ -645,28 +623,14 @@ async function handleSpecialPages(): Promise<boolean> {
   }
 
   // Auto-check unchecked checkboxes that look like consent/agreement/opt-in
-  const checkboxes = document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+  const checkboxes = document.querySelectorAll<HTMLInputElement>(FORM.checkboxInputs);
   for (const cb of checkboxes) {
     if (!isVisible(cb) || cb.checked) continue;
     const label = getLabelForInput(cb);
     if (!label) continue;
     const lower = label.toLowerCase();
     // Auto-check consent, agreement, terms, notifications, privacy, allow
-    const autoCheckKeywords = [
-      'agree',
-      'aceito',
-      'concordo',
-      'consent',
-      'autorizo',
-      'allow',
-      'permitir',
-      'terms',
-      'termos',
-      'privacy',
-      'notification',
-      'notificaç',
-      'comunicaç'
-    ];
+    const autoCheckKeywords = CONSENT_KEYWORDS;
     if (autoCheckKeywords.some((kw) => lower.includes(kw))) {
       cb.click();
       log(`☑️ Auto-checked: "${label}"`);
@@ -681,7 +645,7 @@ async function handleSpecialPages(): Promise<boolean> {
 
 /** Extract a simplified version of the DOM for AI analysis. */
 function getSimplifiedDom(): string {
-  const MAX_LENGTH = 3000;
+  const MAX_LENGTH = LIMITS.simplifiedDomMaxLength;
   const parts: string[] = [];
 
   // Page title/heading
@@ -810,11 +774,11 @@ ${simplifiedDom}`;
 // ── Questionnaire Handling (all via Claude) ──
 
 async function handleQuestionnaire(): Promise<{ needsUserInput: boolean; fieldLabel?: string }> {
-  const MAX_RETRIES = 2;
+  const MAX_RETRIES = LIMITS.maxRetries;
 
   // Text inputs + textareas (unified with retry logic)
   const textInputs = document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
-    'input[type="text"], input[type="email"], input[type="tel"], input[type="number"], input[type="date"], textarea'
+    FORM.textInputs
   );
 
   for (const inp of textInputs) {
@@ -1033,7 +997,7 @@ async function handleQuestionnaire(): Promise<{ needsUserInput: boolean; fieldLa
 
   // Radio buttons
   const radioGroups = new Map<string, HTMLInputElement[]>();
-  const radios = document.querySelectorAll<HTMLInputElement>('input[type="radio"]');
+  const radios = document.querySelectorAll<HTMLInputElement>(FORM.radioInputs);
   for (const radio of radios) {
     if (!isVisible(radio)) continue;
     const name = radio.name;
@@ -1054,19 +1018,17 @@ async function handleQuestionnaire(): Promise<{ needsUserInput: boolean; fieldLa
     let groupLabel = '';
     try {
       // Walk up to find the question container (not the individual radio wrapper)
-      const questionContainer = groupRadios[0].closest(
-        '[data-testid*="input-q_"], .ia-Questions-item, fieldset'
-      );
+      const questionContainer = groupRadios[0].closest(TESTIDS.questionContainer);
       if (questionContainer) {
         // Look for the label/heading of the question group (not individual radio labels)
         const labelEl = questionContainer.querySelector(
-          '[data-testid*="-label"] [data-testid="safe-markup"], legend, [class*="label"]'
+          TESTIDS.questionLabel
         );
         groupLabel = labelEl?.textContent?.trim() || '';
       }
       if (!groupLabel) {
         // Fallback: find the closest parent with a label that's NOT one of the radio options
-        const parent = groupRadios[0].closest('fieldset, [class*="Questions-item"], [id^="q_"]');
+        const parent = groupRadios[0].closest(TESTIDS.questionParent);
         const allLabels = parent?.querySelectorAll('label, legend, span') || [];
         for (const lbl of allLabels) {
           const text = lbl.textContent?.trim() || '';
@@ -1103,7 +1065,7 @@ async function handleQuestionnaire(): Promise<{ needsUserInput: boolean; fieldLa
 
   // Checkbox groups (multi-select questions)
   const checkboxGroups = new Map<string, HTMLInputElement[]>();
-  const allCheckboxes = document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+  const allCheckboxes = document.querySelectorAll<HTMLInputElement>(FORM.checkboxInputs);
   for (const cb of allCheckboxes) {
     if (!isVisible(cb)) continue;
     const name = cb.name;
@@ -1126,16 +1088,16 @@ async function handleQuestionnaire(): Promise<{ needsUserInput: boolean; fieldLa
     let groupLabel = '';
     try {
       const questionContainer = groupCbs[0].closest(
-        '[data-testid*="input-q_"], .ia-Questions-item, fieldset'
+        TESTIDS.questionContainer
       );
       if (questionContainer) {
         const labelEl = questionContainer.querySelector(
-          '[data-testid*="-label"] [data-testid="safe-markup"], legend, [class*="label"]'
+          TESTIDS.questionLabel
         );
         groupLabel = labelEl?.textContent?.trim() || '';
       }
       if (!groupLabel) {
-        const parent = groupCbs[0].closest('fieldset, [class*="Questions-item"], [id^="q_"]');
+        const parent = groupCbs[0].closest(TESTIDS.questionParent);
         const allLabels = parent?.querySelectorAll('label, legend, span') || [];
         for (const lbl of allLabels) {
           const text = lbl.textContent?.trim() || '';
@@ -1600,20 +1562,10 @@ function clickContinueOrSubmit(): 'submitted' | 'continued' | 'none' {
 // ── Cover Letter Detection ──
 
 function hasCoverLetterField(): boolean {
-  const selectors = [
-    '[data-testid="CoverLetterInput"]',
-    '[data-testid*="coverLetter" i]',
-    '[data-testid*="cover-letter" i]',
-    '[class*="CoverLetter"]',
-    '[class*="cover-letter"]',
-    'input[type="file"][name*="cover" i]',
-    'input[type="file"][aria-label*="cover" i]',
-    'input[type="file"][aria-label*="carta" i]'
-  ];
-  for (const sel of selectors) {
+  for (const sel of COVER_LETTER_DETECTION_SELECTORS) {
     if (document.querySelector(sel)) return true;
   }
-  const keywords = ['cover letter', 'carta de apresentação', 'carta de apresentacao'];
+  const keywords = COVER_LETTER_KEYWORDS;
   const textEls = document.querySelectorAll('label, span, h3, button, a');
   for (const el of textEls) {
     const text = (el.textContent || '').toLowerCase();
@@ -1644,7 +1596,7 @@ function watchForPageAdvance(): void {
   // Delay capturing the DOM baseline so that async React re-renders from
   // CV upload / form fills have time to settle. Without this, the observer
   // sees those re-renders as a "page advance" and triggers a loop.
-  const SETTLE_MS = 3000;
+  const SETTLE_MS = TIMING.settleMs;
   const setupTime = Date.now();
   let domBaseline = 0; // captured after settling
   let baselineCaptured = false;
@@ -1659,11 +1611,7 @@ function watchForPageAdvance(): void {
         pageAdvanceObserver = null;
       }
 
-      const isSubmitted =
-        urlAfter.includes('confirmation') ||
-        urlAfter.includes('submitted') ||
-        urlAfter.includes('success') ||
-        urlAfter.includes('post-apply');
+      const isSubmitted = URL_PATTERNS.submission.some((kw) => urlAfter.includes(kw));
 
       if (isSubmitted) {
         log('Submission detected — notifying orchestrator');
@@ -1691,7 +1639,7 @@ function watchForPageAdvance(): void {
     }
 
     const domSizeAfter = document.body?.innerHTML?.length || 0;
-    const domChanged = Math.abs(domSizeAfter - domBaseline) > 500;
+    const domChanged = Math.abs(domSizeAfter - domBaseline) > TIMING.domChangeThreshold;
 
     if (!domChanged) return;
 
@@ -1705,9 +1653,9 @@ function watchForPageAdvance(): void {
   };
 
   pageAdvanceObserver = new MutationObserver(() => {
-    // Debounce: wait 800ms after last DOM mutation before checking
+    // Debounce: wait after last DOM mutation before checking
     if (pendingDebounceTimer) clearTimeout(pendingDebounceTimer);
-    pendingDebounceTimer = setTimeout(checkPageChange, 800);
+    pendingDebounceTimer = setTimeout(checkPageChange, TIMING.debounceMutationMs);
   });
 
   pageAdvanceObserver.observe(document.body, {
@@ -1754,15 +1702,15 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
           // Only treat as resume page if there's a file input or resume card visible.
           const hasCvToUpload = !!(cvBuffer && cvFilename);
           const hasResumeUploadUI = !!(
-            document.querySelector('input[type="file"]') ||
-            document.querySelector('[data-testid="ResumeOptionsMenu"]') ||
+            document.querySelector(FORM.fileInputs) ||
+            document.querySelector(TESTIDS.resumeOptionsMenu) ||
             document.querySelector('[data-testid*="resume-selection-file"]') ||
             document.querySelector('[data-testid*="resume-display"]')
           );
           const isResumeSelectionPage =
             hasResumeUploadUI &&
-            (window.location.href.includes('resume-selection') ||
-              !!document.querySelector('[data-testid*="resume-selection"]'));
+            (window.location.href.includes(URL_PATTERNS.resumeSelection) ||
+              !!document.querySelector(FORM.resumePageIndicators));
 
           // Decide which CV to upload:
           // - If cover letter field exists → use CV-only (cover goes separately)
@@ -1863,10 +1811,10 @@ async function injectFloatingButton(): Promise<void> {
   if (!fb.enabled) return;
 
   // Prevent duplicate injection
-  if (document.getElementById('iaa-floating-container')) return;
+  if (document.getElementById(FLOATING_BUTTON.containerId)) return;
 
-  const sizeMap = { small: '32px', medium: '42px', large: '54px' };
-  const fontMap = { small: '12px', medium: '14px', large: '16px' };
+  const sizeMap = FLOATING_BUTTON.sizes;
+  const fontMap = FLOATING_BUTTON.fonts;
   const btnH = sizeMap[fb.size];
   const btnFont = fontMap[fb.size];
 
@@ -1876,16 +1824,16 @@ async function injectFloatingButton(): Promise<void> {
   } else {
     posStyle.position = 'absolute';
   }
-  if (fb.position.includes('top')) posStyle.top = '16px';
-  if (fb.position.includes('bottom')) posStyle.bottom = '16px';
-  if (fb.position.includes('left')) posStyle.left = '16px';
-  if (fb.position.includes('right')) posStyle.right = '16px';
+  if (fb.position.includes('top')) posStyle.top = FLOATING_BUTTON.padding;
+  if (fb.position.includes('bottom')) posStyle.bottom = FLOATING_BUTTON.padding;
+  if (fb.position.includes('left')) posStyle.left = FLOATING_BUTTON.padding;
+  if (fb.position.includes('right')) posStyle.right = FLOATING_BUTTON.padding;
 
   const container = document.createElement('div');
-  container.id = 'iaa-floating-container';
+  container.id = FLOATING_BUTTON.containerId;
   Object.assign(container.style, {
     ...posStyle,
-    zIndex: '2147483647',
+    zIndex: FLOATING_BUTTON.zIndex,
     display: 'flex',
     flexDirection: fb.position.includes('right') ? 'row-reverse' : 'row',
     gap: '8px',
@@ -1937,10 +1885,10 @@ async function injectFloatingButton(): Promise<void> {
   }
 
   // "Next" button — clicks native Continue/Submit
-  const nextBtn = makeBtn('Next ▶', '#16213e', '#1a2a4a');
+  const nextBtn = makeBtn(FLOATING_BUTTON.nextBtn.label, FLOATING_BUTTON.nextBtn.bg, FLOATING_BUTTON.nextBtn.hover);
   nextBtn.addEventListener('click', () => {
     // Find and click the native Continue or Submit button
-    const allBtns = document.querySelectorAll('button, [role="button"], a.ia-continueButton');
+    const allBtns = document.querySelectorAll(FORM.nativeButtons);
     for (const b of allBtns) {
       const text = (b.textContent || '').toLowerCase().trim();
       if (
@@ -1959,7 +1907,7 @@ async function injectFloatingButton(): Promise<void> {
 
   // "Skip" button — closes tab (signals orchestrator to move on)
   if (fb.showSkip) {
-    const skipBtn = makeBtn('Skip ✕', '#6c757d', '#5a6268');
+    const skipBtn = makeBtn(FLOATING_BUTTON.skipBtn.label, FLOATING_BUTTON.skipBtn.bg, FLOATING_BUTTON.skipBtn.hover);
     skipBtn.addEventListener('click', () => {
       log('Floating: user clicked Skip');
       chrome.runtime.sendMessage({ type: 'TAB_SKIPPED' });
@@ -1973,7 +1921,7 @@ async function injectFloatingButton(): Promise<void> {
 // Register settings listener once (outside the function to avoid leaks)
 chrome.storage.onChanged.addListener((changes) => {
   if (changes.settings) {
-    const el = document.getElementById('iaa-floating-container');
+    const el = document.getElementById(FLOATING_BUTTON.containerId);
     if (el) el.remove();
     injectFloatingButton();
   }

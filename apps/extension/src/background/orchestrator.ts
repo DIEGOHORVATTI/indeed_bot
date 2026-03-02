@@ -22,6 +22,7 @@ import {
   waitForTabLoad,
   getGroupId
 } from './tab-group';
+import { TIMING, LIMITS, URL_PATTERNS } from '../utils/constants';
 
 const registry = new JobRegistry();
 const cache = new AnswerCache();
@@ -252,8 +253,8 @@ async function collectSinglePage(
 }> {
   try {
     await navigateTab(tabId, pageUrl);
-    await waitForTabLoad(tabId, 15000);
-    await delay(2000);
+    await waitForTabLoad(tabId, TIMING.tabLoadTimeout);
+    await delay(TIMING.pageLoadDelay);
   } catch (err) {
     return { links: [], error: `navigation_failed: ${err}` };
   }
@@ -261,7 +262,7 @@ async function collectSinglePage(
   // Verify tab is still on Indeed
   try {
     const tab = await chrome.tabs.get(tabId);
-    if (!tab.url || !tab.url.includes('indeed.com')) {
+    if (!tab.url || !tab.url.includes(URL_PATTERNS.indeedDomain)) {
       return { links: [], error: `redirected: ${tab.url}` };
     }
   } catch {
@@ -309,7 +310,7 @@ async function collectAllJobs(): Promise<void> {
     totalPages = 0;
     estimatedTotalJobs = 0;
     const batchStartIndex = jobs.length;
-    const JOBS_PER_PAGE = 10;
+    const JOBS_PER_PAGE = LIMITS.jobsPerPage;
     const seenJobKeys = new Set<string>();
 
     // Create scraping tabs — first creates the group, extras join it
@@ -404,7 +405,7 @@ async function collectAllJobs(): Promise<void> {
     let nextPage = 2;
     let globalEmptyStreak = consecutiveEmptyPages;
 
-    while (!stopRequested && globalEmptyStreak < 3) {
+    while (!stopRequested && globalEmptyStreak < LIMITS.emptyPageStreak) {
       // Check if we've reached the last known page
       if (estimatedTotalJobs > 0 && totalPages > 0 && nextPage > totalPages) {
         addLog('info', `Reached last page (${totalPages}) — collection done`);
@@ -413,7 +414,7 @@ async function collectAllJobs(): Promise<void> {
 
       // Assign pages to tabs in parallel
       const pageAssignments: { tabId: number; pageNum: number; pageUrl: string }[] = [];
-      for (let i = 0; i < scrapingTabIds.length && globalEmptyStreak < 3; i++) {
+      for (let i = 0; i < scrapingTabIds.length && globalEmptyStreak < LIMITS.emptyPageStreak; i++) {
         const pn = nextPage + i;
         // Don't exceed known total pages
         if (estimatedTotalJobs > 0 && totalPages > 0 && pn > totalPages) break;
@@ -461,7 +462,7 @@ async function collectAllJobs(): Promise<void> {
           const statsInfo = result.stats
             ? ` (${result.stats.totalCards} cards, ${result.stats.externalApply} external)`
             : '';
-          addLog('info', `Page ${pn} empty${statsInfo} (${globalEmptyStreak}/3 consecutive)`);
+          addLog('info', `Page ${pn} empty${statsInfo} (${globalEmptyStreak}/${LIMITS.emptyPageStreak} consecutive)`);
           continue;
         }
 
@@ -568,7 +569,7 @@ async function collectAndApply(): Promise<void> {
   for (let i = 0; i < numWorkers; i++) {
     if (stopRequested) break;
     await launchNextWorker(i === 0 ? reuseTabId : null);
-    await delay(500); // Stagger tab creation slightly
+    await delay(TIMING.workerStaggerDelay); // Stagger tab creation slightly
   }
 
   // Wait for all workers to finish (event-driven via onStepAdvanced / onTabSubmitted)
@@ -650,12 +651,12 @@ async function prepareAndFillJob(worker: TabWorker): Promise<void> {
     worker.tabId = tabId;
   }
 
-  await waitForTabLoad(tabId, 15000);
-  await delay(2000);
+  await waitForTabLoad(tabId, TIMING.tabLoadTimeout);
+  await delay(TIMING.pageLoadDelay);
 
   // Check URL is still Indeed
   const tab = await chrome.tabs.get(tabId);
-  if (!tab.url || !tab.url.includes('indeed.com')) {
+  if (!tab.url || !tab.url.includes(URL_PATTERNS.indeedDomain)) {
     job.status = 'skipped';
     job.skipReason = 'redirected_external';
     skippedCount++;
@@ -833,7 +834,7 @@ async function prepareAndFillJob(worker: TabWorker): Promise<void> {
   await sendFillCommand(worker);
 }
 
-const MAX_FILL_DEPTH = 10;
+const MAX_FILL_DEPTH = LIMITS.maxFillDepth;
 
 async function sendFillCommand(worker: TabWorker, depth = 0): Promise<void> {
   if (depth >= MAX_FILL_DEPTH) {
