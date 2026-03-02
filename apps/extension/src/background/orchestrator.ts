@@ -110,7 +110,11 @@ export function getStatus(): BotStatus {
     totalPages,
     estimatedTotalJobs,
     activeWorkers,
-    concurrentTabs: settings?.concurrentTabs || 1,
+    concurrentTabs: Math.min(
+      settings?.concurrentTabs || 1,
+      settings?.maxApplies && settings.maxApplies > 0 ? settings.maxApplies : Infinity,
+      jobs.filter((j) => j.status === 'pending').length || 1
+    ),
     collectionStats: {
       externalApply: collectionExternalApply,
       duplicates: collectionDuplicates,
@@ -343,6 +347,8 @@ async function collectAllJobs(): Promise<void> {
       let pageDupes = 0;
       let pageKnown = 0;
       for (const link of firstResult.links) {
+        // Stop adding jobs once we have enough for maxApplies
+        if (settings.maxApplies > 0 && jobs.filter((j) => j.status === 'pending').length >= settings.maxApplies) break;
         if (seenJobKeys.has(link.jobKey)) {
           pageDupes++;
           collectionDuplicates++;
@@ -461,6 +467,7 @@ async function collectAllJobs(): Promise<void> {
         let pageDupes = 0;
         let pageKnown = 0;
         for (const link of result.links) {
+          if (settings.maxApplies > 0 && jobs.filter((j) => j.status === 'pending').length >= settings.maxApplies) break;
           if (seenJobKeys.has(link.jobKey)) {
             pageDupes++;
             collectionDuplicates++;
