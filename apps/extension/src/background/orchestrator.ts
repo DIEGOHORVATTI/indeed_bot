@@ -14,7 +14,14 @@ import {
   fillCvWithCoverTemplate,
   loadTemplates
 } from '../services/pdf';
-import { createTabGroup, closeTab, navigateTab, waitForTabLoad } from './tab-group';
+import {
+  createTabGroup,
+  addTabToGroup,
+  closeTab,
+  navigateTab,
+  waitForTabLoad,
+  getGroupId
+} from './tab-group';
 
 const registry = new JobRegistry();
 const cache = new AnswerCache();
@@ -273,7 +280,10 @@ async function collectAllJobs(): Promise<void> {
   if (!settings) return;
 
   totalSearchUrls = settings.searchUrls.length;
-  const scrapingTabs = settings.concurrentTabs || 1;
+  const configuredTabs = settings.concurrentTabs || 1;
+  // Limit tabs to maxApplies if set (no point opening 5 tabs for 1 apply)
+  const scrapingTabs =
+    settings.maxApplies > 0 ? Math.min(configuredTabs, settings.maxApplies) : configuredTabs;
 
   for (let searchIdx = 0; searchIdx < settings.searchUrls.length; searchIdx++) {
     if (stopRequested) break;
@@ -294,11 +304,14 @@ async function collectAllJobs(): Promise<void> {
     const JOBS_PER_PAGE = 10;
     const seenJobKeys = new Set<string>();
 
-    // Create scraping tabs
+    // Create scraping tabs — first creates the group, extras join it
     const scrapingTabIds: number[] = [];
     for (let i = 0; i < scrapingTabs; i++) {
       if (i === 0 && collectionTabId) {
         scrapingTabIds.push(collectionTabId);
+      } else if (getGroupId() !== null) {
+        const tabId = await addTabToGroup(searchUrl);
+        scrapingTabIds.push(tabId);
       } else {
         const { tabId } = await createTabGroup(searchUrl);
         scrapingTabIds.push(tabId);
@@ -618,6 +631,9 @@ async function prepareAndFillJob(worker: TabWorker): Promise<void> {
     // Reuse tab — navigate to job page
     await navigateTab(tabId, job.url);
     addLog('info', `[Tab ${tabWorkers.indexOf(worker) + 1}] Reusing tab ${tabId}`);
+  } else if (getGroupId() !== null) {
+    tabId = await addTabToGroup(job.url);
+    worker.tabId = tabId;
   } else {
     const result = await createTabGroup(job.url);
     tabId = result.tabId;
