@@ -34,7 +34,13 @@ function extractJobKey(url: string): string | null {
 
 // ── Job Link Collection ──
 
-function collectIndeedApplyLinks(): { url: string; jobKey: string }[] {
+interface CollectResult {
+  links: { url: string; jobKey: string }[];
+  totalCards: number;
+  externalApply: number;
+}
+
+function collectIndeedApplyLinks(): CollectResult {
   const links: { url: string; jobKey: string }[] = [];
   const cards = document.querySelectorAll('div[data-testid="slider_item"]');
 
@@ -81,7 +87,7 @@ function collectIndeedApplyLinks(): { url: string; jobKey: string }[] {
   console.log(
     `[indeed-cs] collectLinks result: ${links.length} valid, skipped: ${noApplyBtn} no-apply, ${noLink} no-link, ${notIndeed} not-indeed, ${noKey} no-key`
   );
-  return links;
+  return { links, totalCards: cards.length, externalApply: noApplyBtn };
 }
 
 // ── External Apply Detection ──
@@ -223,8 +229,15 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
       // Wait for cards to render before collecting
       waitForJobCards().then((cardCount) => {
         console.log(`[indeed-cs] waitForJobCards: ${cardCount} cards found`);
-        const links = collectIndeedApplyLinks();
-        sendResponse({ type: 'LINKS_COLLECTED', payload: links });
+        const result = collectIndeedApplyLinks();
+        sendResponse({
+          type: 'LINKS_COLLECTED',
+          payload: result.links,
+          stats: {
+            totalCards: result.totalCards,
+            externalApply: result.externalApply
+          }
+        });
       });
       return true; // async response
     }

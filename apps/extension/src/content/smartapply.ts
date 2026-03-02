@@ -1521,37 +1521,69 @@ function watchForPageAdvance(): void {
   }
 
   const urlBefore = window.location.href;
-  const domSizeBefore = document.body?.innerHTML?.length || 0;
+  // Delay capturing the DOM baseline so that async React re-renders from
+  // CV upload / form fills have time to settle. Without this, the observer
+  // sees those re-renders as a "page advance" and triggers a loop.
+  const SETTLE_MS = 3000;
+  const setupTime = Date.now();
+  let domBaseline = 0; // captured after settling
+  let baselineCaptured = false;
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   const checkPageChange = () => {
     const urlAfter = window.location.href;
-    const domSizeAfter = document.body?.innerHTML?.length || 0;
     const urlChanged = urlAfter !== urlBefore;
-    const domChanged = Math.abs(domSizeAfter - domSizeBefore) > 200;
 
-    if (!urlChanged && !domChanged) return;
+    // URL change is always reliable — detect immediately
+    if (urlChanged) {
+      if (pageAdvanceObserver) {
+        pageAdvanceObserver.disconnect();
+        pageAdvanceObserver = null;
+      }
 
-    // Page has changed — disconnect observer
+      const isSubmitted =
+        urlAfter.includes('confirmation') ||
+        urlAfter.includes('submitted') ||
+        urlAfter.includes('success') ||
+        urlAfter.includes('post-apply');
+
+      if (isSubmitted) {
+        log('Submission detected — notifying orchestrator');
+        chrome.runtime.sendMessage({ type: 'TAB_SUBMITTED' });
+      } else {
+        log('Page advanced (URL changed) — notifying orchestrator for next fill');
+        chrome.runtime.sendMessage({ type: 'STEP_ADVANCED' });
+      }
+      return;
+    }
+
+    // DOM-size change: only check after the settling period so we don't
+    // false-trigger on React re-renders from CV upload / form filling.
+    const elapsed = Date.now() - setupTime;
+    if (elapsed < SETTLE_MS) {
+      // Still settling — just update baseline, don't fire
+      return;
+    }
+
+    // Capture baseline once after settling
+    if (!baselineCaptured) {
+      domBaseline = document.body?.innerHTML?.length || 0;
+      baselineCaptured = true;
+      return;
+    }
+
+    const domSizeAfter = document.body?.innerHTML?.length || 0;
+    const domChanged = Math.abs(domSizeAfter - domBaseline) > 500;
+
+    if (!domChanged) return;
+
     if (pageAdvanceObserver) {
       pageAdvanceObserver.disconnect();
       pageAdvanceObserver = null;
     }
 
-    // Check if this is a submission confirmation
-    const isSubmitted =
-      urlAfter.includes('confirmation') ||
-      urlAfter.includes('submitted') ||
-      urlAfter.includes('success') ||
-      urlAfter.includes('post-apply');
-
-    if (isSubmitted) {
-      log('Submission detected — notifying orchestrator');
-      chrome.runtime.sendMessage({ type: 'TAB_SUBMITTED' });
-    } else {
-      log('Page advanced — notifying orchestrator for next fill');
-      chrome.runtime.sendMessage({ type: 'STEP_ADVANCED' });
-    }
+    log('Page advanced (DOM changed) — notifying orchestrator for next fill');
+    chrome.runtime.sendMessage({ type: 'STEP_ADVANCED' });
   };
 
   pageAdvanceObserver = new MutationObserver(() => {

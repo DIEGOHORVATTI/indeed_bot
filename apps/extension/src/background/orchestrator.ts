@@ -14,7 +14,7 @@ import {
   fillCvWithCoverTemplate,
   loadTemplates
 } from '../services/pdf';
-import { createTabGroup, addTabToGroup, closeTab, navigateTab, waitForTabLoad } from './tab-group';
+import { createTabGroup, closeTab, navigateTab, waitForTabLoad } from './tab-group';
 
 const registry = new JobRegistry();
 const cache = new AnswerCache();
@@ -211,10 +211,56 @@ export function resumeBot(): void {
 
 // ── Collection Phase ──
 
+/** Collect links from a single page using a specific tab */
+async function collectSinglePage(
+  tabId: number,
+  pageUrl: string,
+  pageNum: number
+): Promise<{
+  links: { url: string; jobKey: string }[];
+  stats?: { totalCards: number; externalApply: number };
+  jobCount?: number;
+  error?: string;
+}> {
+  try {
+    await navigateTab(tabId, pageUrl);
+    await waitForTabLoad(tabId, 15000);
+    await delay(2000);
+  } catch (err) {
+    return { links: [], error: `navigation_failed: ${err}` };
+  }
+
+  // Verify tab is still on Indeed
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    if (!tab.url || !tab.url.includes('indeed.com')) {
+      return { links: [], error: `redirected: ${tab.url}` };
+    }
+  } catch {
+    return { links: [], error: 'tab_closed' };
+  }
+
+  // Get total count if available
+  let jobCount: number | undefined;
+  const countResp = await sendToTab(tabId, { type: 'GET_TOTAL_COUNT' });
+  if (countResp?.payload?.totalJobs > 0) {
+    jobCount = countResp.payload.totalJobs;
+  }
+
+  // Collect links
+  const response = await sendToTab(tabId, { type: 'COLLECT_LINKS' });
+  const links: { url: string; jobKey: string }[] = response?.payload || [];
+  const stats = response?.stats;
+
+  console.log(`[collect] Tab ${tabId} page ${pageNum}: got ${links.length} links`);
+  return { links, stats, jobCount };
+}
+
 async function collectAllJobs(): Promise<void> {
   if (!settings) return;
 
   totalSearchUrls = settings.searchUrls.length;
+  const scrapingTabs = settings.concurrentTabs || 1;
 
   for (let searchIdx = 0; searchIdx < settings.searchUrls.length; searchIdx++) {
     if (stopRequested) break;
@@ -223,192 +269,164 @@ async function collectAllJobs(): Promise<void> {
     currentSearchUrl = searchUrl;
     currentSearchIndex = searchIdx;
 
-    addLog('info', `[Link ${searchIdx + 1}/${totalSearchUrls}] Collecting from: ${searchUrl}`);
+    addLog(
+      'info',
+      `[Link ${searchIdx + 1}/${totalSearchUrls}] Collecting from: ${searchUrl} (${scrapingTabs} tab(s))`
+    );
 
-    let pageNum = 1;
     currentPage = 0;
     totalPages = 0;
     estimatedTotalJobs = 0;
     const batchStartIndex = jobs.length;
     const JOBS_PER_PAGE = 10;
+    const seenJobKeys = new Set<string>();
+
+    // Create scraping tabs
+    const scrapingTabIds: number[] = [];
+    for (let i = 0; i < scrapingTabs; i++) {
+      if (i === 0 && collectionTabId) {
+        scrapingTabIds.push(collectionTabId);
+      } else {
+        const { tabId } = await createTabGroup(searchUrl);
+        scrapingTabIds.push(tabId);
+      }
+    }
+
+    // Phase 1: Scrape first page to get total count
+    const firstPageUrl = buildPageUrl(searchUrl, 0);
+    const firstResult = await collectSinglePage(scrapingTabIds[0], firstPageUrl, 1);
+
+    if (firstResult.error) {
+      addLog('warning', `Page 1 failed: ${firstResult.error}`);
+    }
+
+    if (firstResult.jobCount) {
+      estimatedTotalJobs = firstResult.jobCount;
+      totalPages = Math.ceil(estimatedTotalJobs / JOBS_PER_PAGE);
+      addLog('info', `Found ~${estimatedTotalJobs} jobs across ~${totalPages} page(s)`);
+    }
+
+    // Process first page results
     let consecutiveEmptyPages = 0;
-    let tabRetries = 0;
-    const MAX_TAB_RETRIES = 3;
-
-    while (!stopRequested) {
-      // Build page URL using &start= parameter (0-indexed: page1=0, page2=10, page3=20...)
-      const startOffset = (pageNum - 1) * JOBS_PER_PAGE;
-      const pageUrl = buildPageUrl(searchUrl, startOffset);
-
-      console.log(`[collect] Page ${pageNum} → ${pageUrl}`);
-
-      // Create or navigate the collection tab
-      try {
-        if (!collectionTabId) {
-          const { tabId } = await createTabGroup(pageUrl);
-          collectionTabId = tabId;
-          console.log(`[collect] Created new collection tab ${collectionTabId}`);
-        } else {
-          await navigateTab(collectionTabId, pageUrl);
-        }
-
-        await waitForTabLoad(collectionTabId, 15000);
-        await delay(2000);
-      } catch (err) {
-        console.warn(`[collect] Tab navigation failed on page ${pageNum}:`, err);
-        // Tab might have been closed — try to recreate
-        collectionTabId = null;
-        tabRetries++;
-        if (tabRetries > MAX_TAB_RETRIES) {
-          addLog(
-            'error',
-            `Collection tab failed ${MAX_TAB_RETRIES} times, giving up on this search`
-          );
-          break;
-        }
-        addLog(
-          'warning',
-          `Collection tab lost, recreating (retry ${tabRetries}/${MAX_TAB_RETRIES})...`
-        );
-        await delay(2000);
-        continue; // Retry same page with a new tab
-      }
-
-      // Verify tab is still on Indeed (didn't redirect to error/404)
-      try {
-        const tab = await chrome.tabs.get(collectionTabId);
-        console.log(`[collect] Tab URL after load: ${tab.url}`);
-        if (!tab.url || !tab.url.includes('indeed.com')) {
-          addLog('warning', `Page ${pageNum} redirected to ${tab.url}, skipping`);
-          consecutiveEmptyPages++;
-          if (consecutiveEmptyPages >= 2) break;
-          pageNum++;
-          await randomDelay(2000, 4000);
-          continue;
-        }
-      } catch {
-        // Tab was closed externally — recreate it and retry same page
-        console.warn(`[collect] Tab ${collectionTabId} no longer exists, recreating`);
-        collectionTabId = null;
-        tabRetries++;
-        if (tabRetries > MAX_TAB_RETRIES) {
-          addLog('error', `Collection tab died ${MAX_TAB_RETRIES} times, giving up on this search`);
-          break;
-        }
-        addLog(
-          'warning',
-          `Collection tab closed, recreating (retry ${tabRetries}/${MAX_TAB_RETRIES})...`
-        );
-        await delay(2000);
-        continue; // Retry same page
-      }
-
-      // Tab survived — reset retry counter
-      tabRetries = 0;
-      currentPage = pageNum;
-      broadcastStatus();
-
-      // Try to get total count on every page until we get a reliable estimate
-      if (estimatedTotalJobs === 0) {
-        const countResp = await sendToTab(collectionTabId, {
-          type: 'GET_TOTAL_COUNT'
-        });
-        if (countResp?.payload) {
-          const rawJobCount = countResp.payload.totalJobs || 0;
-          const rawPageCount = countResp.payload.totalPages || 0;
-
-          if (rawJobCount > 0) {
-            // Reliable count from page content
-            estimatedTotalJobs = rawJobCount;
-            totalPages = Math.ceil(estimatedTotalJobs / JOBS_PER_PAGE);
-            addLog('info', `Found ~${estimatedTotalJobs} jobs across ~${totalPages} page(s)`);
-          } else if (pageNum === 1) {
-            // Page 1 has no count — don't set totalPages yet, let pagination discover it
-            addLog('info', `Page 1 has no job count — will keep paginating until no more results`);
-          }
-          console.log(
-            `[collect] Page ${pageNum} count check: rawJobs=${rawJobCount}, rawPages=${rawPageCount}, estimatedTotal=${estimatedTotalJobs}, totalPages=${totalPages}`
-          );
-          broadcastStatus();
-        }
-      }
-
-      const response = await sendToTab(collectionTabId, {
-        type: 'COLLECT_LINKS'
-      });
-      const links: { url: string; jobKey: string }[] = response?.payload || [];
-
-      console.log(`[collect] Page ${pageNum}: got ${links.length} links`);
-
-      if (links.length === 0) {
-        consecutiveEmptyPages++;
-        if (consecutiveEmptyPages >= 3) {
-          addLog('info', `3 consecutive empty pages — stopping collection after page ${pageNum}`);
-          break;
-        }
-        addLog(
-          'info',
-          `Page ${pageNum} empty (${consecutiveEmptyPages}/3 consecutive), trying next page...`
-        );
-        pageNum++;
-        await randomDelay(2000, 4000);
-        continue;
-      }
-
-      consecutiveEmptyPages = 0;
-
-      const newLinks: { url: string; jobKey: string }[] = [];
-      for (const link of links) {
+    if (firstResult.links.length > 0) {
+      for (const link of firstResult.links) {
+        if (seenJobKeys.has(link.jobKey)) continue;
+        seenJobKeys.add(link.jobKey);
         if (await registry.isKnown(link.jobKey)) continue;
-        newLinks.push(link);
-      }
-
-      for (const link of newLinks) {
         jobs.push({ url: link.url, jobKey: link.jobKey, status: 'pending' });
       }
-
-      const skipped = links.length - newLinks.length;
-      const totalNew = jobs.length - batchStartIndex;
-      const pageInfo = totalPages > 0 ? ` (page ${pageNum}/${totalPages})` : '';
-      const totalInfo =
-        estimatedTotalJobs > 0 ? ` — ${totalNew}/${estimatedTotalJobs}` : ` — ${totalNew} total`;
       addLog(
         'info',
-        `Page ${pageNum}${pageInfo}: +${newLinks.length} new${skipped ? ` (${skipped} known)` : ''}${totalInfo}`
+        `Page 1: +${firstResult.links.length} links, ${jobs.length - batchStartIndex} new`
       );
-      console.log(
-        `[collect] Page ${pageNum}: +${newLinks.length} new, ${skipped} known, ${totalNew} total collected`
-      );
-      broadcastStatus();
+    } else {
+      consecutiveEmptyPages++;
+      const statsInfo = firstResult.stats
+        ? ` (${firstResult.stats.totalCards} cards, ${firstResult.stats.externalApply} external)`
+        : '';
+      addLog('info', `Page 1 empty${statsInfo}`);
+    }
 
-      // Stop if we've collected all estimated jobs or exceeded total pages
-      // Only trust totalPages if we got a reliable job count (estimatedTotalJobs > 0)
-      if (estimatedTotalJobs > 0 && totalPages > 0 && pageNum >= totalPages) {
-        addLog(
-          'info',
-          `Reached last page (${pageNum}/${totalPages}) — collection done: ${totalNew} jobs`
-        );
+    currentPage = 1;
+    broadcastStatus();
+
+    // Phase 2: Parallel scraping of remaining pages
+    let nextPage = 2;
+    let globalEmptyStreak = consecutiveEmptyPages;
+
+    while (!stopRequested && globalEmptyStreak < 3) {
+      // Check if we've reached the last known page
+      if (estimatedTotalJobs > 0 && totalPages > 0 && nextPage > totalPages) {
+        addLog('info', `Reached last page (${totalPages}) — collection done`);
         break;
       }
 
-      pageNum++;
-      await randomDelay(2000, 4000);
+      // Assign pages to tabs in parallel
+      const pageAssignments: { tabId: number; pageNum: number; pageUrl: string }[] = [];
+      for (let i = 0; i < scrapingTabIds.length && globalEmptyStreak < 3; i++) {
+        const pn = nextPage + i;
+        // Don't exceed known total pages
+        if (estimatedTotalJobs > 0 && totalPages > 0 && pn > totalPages) break;
+        const startOffset = (pn - 1) * JOBS_PER_PAGE;
+        pageAssignments.push({
+          tabId: scrapingTabIds[i],
+          pageNum: pn,
+          pageUrl: buildPageUrl(searchUrl, startOffset)
+        });
+      }
+
+      if (pageAssignments.length === 0) break;
+
+      // Scrape all assigned pages in parallel
+      const results = await Promise.all(
+        pageAssignments.map((a) => collectSinglePage(a.tabId, a.pageUrl, a.pageNum))
+      );
+
+      // Process results in page order
+      for (let i = 0; i < results.length; i++) {
+        const result = results[i];
+        const pn = pageAssignments[i].pageNum;
+        currentPage = pn;
+
+        // Pick up total count from any page if we don't have it yet
+        if (estimatedTotalJobs === 0 && result.jobCount) {
+          estimatedTotalJobs = result.jobCount;
+          totalPages = Math.ceil(estimatedTotalJobs / JOBS_PER_PAGE);
+          addLog('info', `Found ~${estimatedTotalJobs} jobs across ~${totalPages} page(s)`);
+        }
+
+        if (result.error) {
+          addLog('warning', `Page ${pn} error: ${result.error}`);
+          globalEmptyStreak++;
+          continue;
+        }
+
+        if (result.links.length === 0) {
+          globalEmptyStreak++;
+          const statsInfo = result.stats
+            ? ` (${result.stats.totalCards} cards, ${result.stats.externalApply} external)`
+            : '';
+          addLog('info', `Page ${pn} empty${statsInfo} (${globalEmptyStreak}/3 consecutive)`);
+          continue;
+        }
+
+        // Got results — reset empty streak
+        globalEmptyStreak = 0;
+        let pageNew = 0;
+        for (const link of result.links) {
+          if (seenJobKeys.has(link.jobKey)) continue;
+          seenJobKeys.add(link.jobKey);
+          if (await registry.isKnown(link.jobKey)) continue;
+          jobs.push({ url: link.url, jobKey: link.jobKey, status: 'pending' });
+          pageNew++;
+        }
+        const totalNew = jobs.length - batchStartIndex;
+        const pageInfo = totalPages > 0 ? ` (page ${pn}/${totalPages})` : '';
+        const totalInfo =
+          estimatedTotalJobs > 0 ? ` — ${totalNew}/${estimatedTotalJobs}` : ` — ${totalNew} total`;
+        addLog('info', `Page ${pn}${pageInfo}: +${pageNew} new${totalInfo}`);
+      }
+
+      broadcastStatus();
+      nextPage += pageAssignments.length;
+      await randomDelay(1500, 3000);
     }
 
     const totalCollected = jobs.length - batchStartIndex;
     addLog(
       'info',
-      `[Link ${searchIdx + 1}/${totalSearchUrls}] Collection complete: ${totalCollected} jobs from ${pageNum} page(s)`
+      `[Link ${searchIdx + 1}/${totalSearchUrls}] Collection complete: ${totalCollected} jobs from ${nextPage - 1} page(s)`
     );
     console.log(
-      `[collect] Search URL #${searchIdx + 1} finished: ${totalCollected} jobs collected from ${pageNum} pages`
+      `[collect] Search URL #${searchIdx + 1} finished: ${totalCollected} jobs collected`
     );
-  }
 
-  // Close collection tab
-  if (collectionTabId) {
-    await closeTab(collectionTabId);
-    collectionTabId = null;
+    // Keep first scraping tab as collectionTabId for reuse as first worker
+    collectionTabId = scrapingTabIds[0];
+    // Close extra scraping tabs (keep only the first one)
+    for (let i = 1; i < scrapingTabIds.length; i++) {
+      closeTab(scrapingTabIds[i]).catch(() => {});
+    }
   }
 }
 
@@ -436,9 +454,13 @@ async function collectAndApply(): Promise<void> {
 
   addLog('info', `Starting ${numWorkers} concurrent tab(s) for ${pendingJobs.length} jobs`);
 
+  // Reuse collection tab for the first worker
+  const reuseTabId = collectionTabId;
+  collectionTabId = null;
+
   for (let i = 0; i < numWorkers; i++) {
     if (stopRequested) break;
-    await launchNextWorker();
+    await launchNextWorker(i === 0 ? reuseTabId : null);
     await delay(500); // Stagger tab creation slightly
   }
 
@@ -461,7 +483,7 @@ function getNextPendingJob(): JobEntry | null {
   return jobs.find((j) => j.status === 'pending') || null;
 }
 
-async function launchNextWorker(): Promise<void> {
+async function launchNextWorker(reuseTabId: number | null = null): Promise<void> {
   if (stopRequested || !settings) return;
 
   if (settings.maxApplies > 0 && appliedCount >= settings.maxApplies) {
@@ -477,7 +499,7 @@ async function launchNextWorker(): Promise<void> {
   job.skipReason = 'in_progress';
 
   const worker: TabWorker = {
-    tabId: -1,
+    tabId: reuseTabId || -1,
     job,
     state: 'navigating'
   };
@@ -489,8 +511,17 @@ async function launchNextWorker(): Promise<void> {
     addLog('error', `Worker error for ${job.title || job.url}: ${err}`);
     job.status = 'failed';
     failedCount++;
-    worker.state = 'done';
-    broadcastStatus();
+    await finishWorkerAndReuseTab(worker);
+  }
+}
+
+/** Mark worker as done and reuse its tab for the next pending job */
+async function finishWorkerAndReuseTab(worker: TabWorker): Promise<void> {
+  worker.state = 'done';
+  broadcastStatus();
+  if (!stopRequested && jobs.some((j) => j.status === 'pending')) {
+    await delay(1000);
+    await launchNextWorker(worker.tabId);
   }
 }
 
@@ -498,9 +529,17 @@ async function prepareAndFillJob(worker: TabWorker): Promise<void> {
   if (!settings) return;
   const job = worker.job;
 
-  // Create tab and navigate to job page
-  const { tabId } = await createTabGroup(job.url);
-  worker.tabId = tabId;
+  // Reuse existing tab or create a new one
+  let tabId = worker.tabId;
+  if (tabId > 0) {
+    // Reuse tab — navigate to job page
+    await navigateTab(tabId, job.url);
+    addLog('info', `[Tab ${tabWorkers.indexOf(worker) + 1}] Reusing tab ${tabId}`);
+  } else {
+    const result = await createTabGroup(job.url);
+    tabId = result.tabId;
+    worker.tabId = tabId;
+  }
 
   await waitForTabLoad(tabId, 15000);
   await delay(2000);
@@ -511,9 +550,7 @@ async function prepareAndFillJob(worker: TabWorker): Promise<void> {
     job.status = 'skipped';
     job.skipReason = 'redirected_external';
     skippedCount++;
-    worker.state = 'done';
-    await closeTab(tabId);
-    broadcastStatus();
+    await finishWorkerAndReuseTab(worker);
     return;
   }
 
@@ -621,9 +658,7 @@ async function prepareAndFillJob(worker: TabWorker): Promise<void> {
     job.status = 'skipped';
     job.skipReason = 'cv_generation_failed';
     skippedCount++;
-    worker.state = 'done';
-    await closeTab(tabId);
-    broadcastStatus();
+    await finishWorkerAndReuseTab(worker);
     return;
   }
 
@@ -635,10 +670,8 @@ async function prepareAndFillJob(worker: TabWorker): Promise<void> {
     job.status = 'skipped';
     job.skipReason = 'external_apply';
     skippedCount++;
-    worker.state = 'done';
-    await closeTab(tabId);
     await registry.markSkipped(job.jobKey, 'external_apply');
-    broadcastStatus();
+    await finishWorkerAndReuseTab(worker);
     return;
   }
 
@@ -646,10 +679,8 @@ async function prepareAndFillJob(worker: TabWorker): Promise<void> {
     job.status = 'skipped';
     job.skipReason = 'no_apply_button';
     skippedCount++;
-    worker.state = 'done';
-    await closeTab(tabId);
     await registry.markSkipped(job.jobKey, 'no_apply_button');
-    broadcastStatus();
+    await finishWorkerAndReuseTab(worker);
     return;
   }
 
@@ -673,9 +704,7 @@ async function prepareAndFillJob(worker: TabWorker): Promise<void> {
     addLog('warning', 'Wizard did not load');
     job.status = 'failed';
     failedCount++;
-    worker.state = 'done';
-    await closeTab(tabId);
-    broadcastStatus();
+    await finishWorkerAndReuseTab(worker);
     return;
   }
 
@@ -765,13 +794,5 @@ export async function onTabSubmitted(senderTabId: number): Promise<void> {
   await registry.markApplied(job.jobKey);
   addLog('info', `Applied successfully: ${job.title || job.url}`);
 
-  worker.state = 'done';
-  await closeTab(senderTabId);
-  broadcastStatus();
-
-  // Launch next worker if there are pending jobs
-  if (!stopRequested && jobs.some((j) => j.status === 'pending')) {
-    await delay(1000);
-    await launchNextWorker();
-  }
+  await finishWorkerAndReuseTab(worker);
 }
