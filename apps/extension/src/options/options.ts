@@ -2,7 +2,7 @@
  * Options page — settings management.
  */
 
-import { Settings, DEFAULT_SETTINGS } from '../types';
+import { Settings, DEFAULT_SETTINGS, FloatingButtonSettings } from '../types';
 
 const $ = (id: string) => document.getElementById(id) as HTMLInputElement;
 
@@ -29,6 +29,13 @@ const fields = {
   profileGithub: $('profile-github'),
   profileInstagram: $('profile-instagram'),
   profilePortfolio: $('profile-portfolio'),
+  // Floating button
+  fbEnabled: $('fb-enabled'),
+  fbPosition: $('fb-position') as unknown as HTMLSelectElement,
+  fbStyle: $('fb-style') as unknown as HTMLSelectElement,
+  fbSize: $('fb-size') as unknown as HTMLSelectElement,
+  fbOpacity: $('fb-opacity'),
+  fbShowSkip: $('fb-show-skip'),
 };
 
 // ── Load Settings ──
@@ -42,6 +49,15 @@ async function loadSettings(): Promise<void> {
   fields.maxApplies.value = String(s.maxApplies);
   fields.concurrentTabs.value = String(s.concurrentTabs || 1);
   fields.availableToday.checked = s.availableToday !== false; // default true
+  // Floating button
+  const fb = { ...DEFAULT_SETTINGS.floatingButton, ...s.floatingButton };
+  fields.fbEnabled.checked = fb.enabled;
+  fields.fbPosition.value = fb.position;
+  fields.fbStyle.value = fb.style;
+  fields.fbSize.value = fb.size;
+  fields.fbOpacity.value = String(fb.opacity);
+  fields.fbShowSkip.checked = fb.showSkip;
+
   fields.personalizationEnabled.checked = s.personalization.enabled;
   fields.baseCv.value = s.personalization.baseCv;
   fields.baseCover.value = s.personalization.baseCoverLetter;
@@ -74,6 +90,14 @@ async function saveSettings(): Promise<void> {
     maxApplies: parseInt(fields.maxApplies.value) || 0,
     concurrentTabs: Math.max(1, Math.min(5, parseInt(fields.concurrentTabs.value) || 1)),
     availableToday: fields.availableToday.checked,
+    floatingButton: {
+      enabled: fields.fbEnabled.checked,
+      position: fields.fbPosition.value as FloatingButtonSettings['position'],
+      style: fields.fbStyle.value as FloatingButtonSettings['style'],
+      size: fields.fbSize.value as FloatingButtonSettings['size'],
+      opacity: Math.max(0.1, Math.min(1, parseFloat(fields.fbOpacity.value) || 0.9)),
+      showSkip: fields.fbShowSkip.checked,
+    },
     personalization: {
       enabled: fields.personalizationEnabled.checked,
       baseCv: fields.baseCv.value,

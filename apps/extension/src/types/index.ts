@@ -35,6 +35,15 @@ export interface ProfileSettings {
   fatherName: string;
 }
 
+export interface FloatingButtonSettings {
+  enabled: boolean;
+  position: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+  style: 'fixed' | 'absolute' | 'sticky';
+  size: 'small' | 'medium' | 'large';
+  opacity: number; // 0.1 - 1.0
+  showSkip: boolean; // Show a "Skip" button alongside "Next"
+}
+
 export interface Settings {
   backendUrl: string; // Backend API URL that proxies Claude
   language: string; // us, uk, br, fr, de, es
@@ -42,6 +51,7 @@ export interface Settings {
   maxApplies: number; // 0 = unlimited
   availableToday: boolean; // When true, date fields asking "when can you start" → today's date
   concurrentTabs: number; // 1-5, number of simultaneous application tabs
+  floatingButton: FloatingButtonSettings;
   personalization: {
     enabled: boolean;
     baseCv: string; // markdown content
@@ -58,6 +68,14 @@ export const DEFAULT_SETTINGS: Settings = {
   maxApplies: 0,
   availableToday: true,
   concurrentTabs: 1,
+  floatingButton: {
+    enabled: true,
+    position: 'bottom-right',
+    style: 'fixed',
+    size: 'medium',
+    opacity: 0.9,
+    showSkip: true,
+  },
   personalization: {
     enabled: true,
     baseCv: '',

@@ -329,20 +329,31 @@ async function collectAllJobs(): Promise<void> {
       currentPage = pageNum;
       broadcastStatus();
 
-      if (pageNum === 1) {
+      // Try to get total count on every page until we get a reliable estimate
+      if (estimatedTotalJobs === 0) {
         const countResp = await sendToTab(collectionTabId, {
           type: 'GET_TOTAL_COUNT'
         });
         if (countResp?.payload) {
-          estimatedTotalJobs = countResp.payload.totalJobs || 0;
-          totalPages = estimatedTotalJobs > 0
-            ? Math.ceil(estimatedTotalJobs / JOBS_PER_PAGE)
-            : countResp.payload.totalPages || 0;
-          addLog(
-            'info',
-            `Found ~${estimatedTotalJobs} jobs across ~${totalPages} page(s)`
-          );
-          console.log(`[collect] Estimated: ${estimatedTotalJobs} jobs, ${totalPages} pages`);
+          const rawJobCount = countResp.payload.totalJobs || 0;
+          const rawPageCount = countResp.payload.totalPages || 0;
+
+          if (rawJobCount > 0) {
+            // Reliable count from page content
+            estimatedTotalJobs = rawJobCount;
+            totalPages = Math.ceil(estimatedTotalJobs / JOBS_PER_PAGE);
+            addLog(
+              'info',
+              `Found ~${estimatedTotalJobs} jobs across ~${totalPages} page(s)`
+            );
+          } else if (pageNum === 1) {
+            // Page 1 has no count — don't set totalPages yet, let pagination discover it
+            addLog(
+              'info',
+              `Page 1 has no job count — will keep paginating until no more results`
+            );
+          }
+          console.log(`[collect] Page ${pageNum} count check: rawJobs=${rawJobCount}, rawPages=${rawPageCount}, estimatedTotal=${estimatedTotalJobs}, totalPages=${totalPages}`);
           broadcastStatus();
         }
       }
@@ -356,11 +367,11 @@ async function collectAllJobs(): Promise<void> {
 
       if (links.length === 0) {
         consecutiveEmptyPages++;
-        if (consecutiveEmptyPages >= 2) {
-          addLog('info', `No more jobs found after page ${pageNum}`);
+        if (consecutiveEmptyPages >= 3) {
+          addLog('info', `3 consecutive empty pages — stopping collection after page ${pageNum}`);
           break;
         }
-        addLog('info', `Page ${pageNum} empty, trying next page...`);
+        addLog('info', `Page ${pageNum} empty (${consecutiveEmptyPages}/3 consecutive), trying next page...`);
         pageNum++;
         await randomDelay(2000, 4000);
         continue;
@@ -393,10 +404,11 @@ async function collectAllJobs(): Promise<void> {
       broadcastStatus();
 
       // Stop if we've collected all estimated jobs or exceeded total pages
-      if (totalPages > 0 && pageNum >= totalPages) {
+      // Only trust totalPages if we got a reliable job count (estimatedTotalJobs > 0)
+      if (estimatedTotalJobs > 0 && totalPages > 0 && pageNum >= totalPages) {
         addLog(
           'info',
-          `Collection done: ${totalNew} jobs from ${pageNum} page(s)`
+          `Reached last page (${pageNum}/${totalPages}) — collection done: ${totalNew} jobs`
         );
         break;
       }
@@ -406,6 +418,7 @@ async function collectAllJobs(): Promise<void> {
     }
 
     const totalCollected = jobs.length - batchStartIndex;
+    addLog('info', `[Link ${searchIdx + 1}/${totalSearchUrls}] Collection complete: ${totalCollected} jobs from ${pageNum} page(s)`);
     console.log(`[collect] Search URL #${searchIdx + 1} finished: ${totalCollected} jobs collected from ${pageNum} pages`);
   }
 

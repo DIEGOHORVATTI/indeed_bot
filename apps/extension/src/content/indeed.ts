@@ -193,6 +193,18 @@ function getTotalPages(): number {
   return Math.max(1, count);
 }
 
+// ── Smart Wait ──
+
+async function waitForJobCards(timeoutMs = 10000): Promise<number> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const cards = document.querySelectorAll('div[data-testid="slider_item"]');
+    if (cards.length > 0) return cards.length;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  return 0;
+}
+
 // ── Message Listener ──
 
 chrome.runtime.onMessage.addListener(
@@ -201,9 +213,13 @@ chrome.runtime.onMessage.addListener(
     // Return false for unknown messages so smartapply.js (in iframe) can handle them.
     switch (message.type) {
       case 'COLLECT_LINKS': {
-        const links = collectIndeedApplyLinks();
-        sendResponse({ type: 'LINKS_COLLECTED', payload: links });
-        return true;
+        // Wait for cards to render before collecting
+        waitForJobCards().then((cardCount) => {
+          console.log(`[indeed-cs] waitForJobCards: ${cardCount} cards found`);
+          const links = collectIndeedApplyLinks();
+          sendResponse({ type: 'LINKS_COLLECTED', payload: links });
+        });
+        return true; // async response
       }
       case 'CLICK_APPLY': {
         const result = findAndClickApply();

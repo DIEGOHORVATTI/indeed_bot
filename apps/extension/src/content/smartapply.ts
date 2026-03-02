@@ -496,6 +496,48 @@ async function handleCoverLetter(pdfData?: ArrayBuffer, pdfFilename?: string): P
   log('WARNING: No cover letter upload strategy worked', 'warning');
 }
 
+// ── Additional Documents (Review Page) ──
+
+/** On the review page, check for "Supporting documents" / "Documentos de apoio" section
+ *  and click "Add" / "Adicionar" to navigate to the additional-documents page
+ *  where the cover letter text will be auto-filled. */
+async function handleAdditionalDocuments(): Promise<boolean> {
+  // Only act on the review page
+  if (!window.location.href.includes('review-module')) return false;
+
+  // Find the "Add" / "Adicionar" link/button near the additional/supporting documents section
+  const addKeywords = ['adicionar', 'add'];
+  const sectionKeywords = [
+    'documentos de apoio', 'supporting documents',
+    'additional documents', 'documentos adicionais',
+    'cover letter', 'carta de apresentação',
+  ];
+
+  // Check if the section exists on the page
+  const bodyText = document.body.innerText.toLowerCase();
+  const hasSection = sectionKeywords.some(kw => bodyText.includes(kw));
+  if (!hasSection) return false;
+
+  // Check if documents are already added (no "Adicionar" / "Add" link visible)
+  const allClickables = [...document.querySelectorAll('a, button, [role="button"]')];
+  for (const el of allClickables) {
+    if (!isVisible(el as Element)) continue;
+    const text = (el.textContent || '').toLowerCase().trim();
+    if (addKeywords.some(kw => text === kw) || text.includes('adicionar') || text.includes('add document')) {
+      // Verify it's near the supporting documents section by checking nearby text
+      const parent = (el as HTMLElement).closest('section, div[class], [data-testid]');
+      const parentText = (parent?.textContent || '').toLowerCase();
+      if (sectionKeywords.some(kw => parentText.includes(kw))) {
+        log(`📎 Review page: clicking "${(el as HTMLElement).textContent?.trim()}" to add supporting documents`);
+        (el as HTMLElement).click();
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 // ── Special Page Handling ──
 
 /** Handle known Indeed wizard pages that don't have standard form fields. */
@@ -1484,6 +1526,14 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
 
           await waitMs(500);
 
+          // On review page, auto-navigate to additional-documents if available
+          const addedDocs = await handleAdditionalDocuments();
+          if (addedDocs) {
+            log('Navigating to additional-documents page');
+            sendResponse({ type: 'STEP_RESULT', payload: { action: 'continued' } });
+            return;
+          }
+
           // Human-review mode: fill only, don't click continue/submit.
           // User reviews filled fields and clicks native Indeed buttons.
           // We watch for page changes to notify the orchestrator.
@@ -1519,6 +1569,120 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
   }
   return true;
 });
+
+// ── Floating Button ──
+
+import { FloatingButtonSettings, DEFAULT_SETTINGS } from '../types';
+
+async function injectFloatingButton(): Promise<void> {
+  const data = await chrome.storage.local.get('settings');
+  const fb: FloatingButtonSettings = {
+    ...DEFAULT_SETTINGS.floatingButton,
+    ...data.settings?.floatingButton,
+  };
+  if (!fb.enabled) return;
+
+  // Prevent duplicate injection
+  if (document.getElementById('iaa-floating-container')) return;
+
+  const sizeMap = { small: '32px', medium: '42px', large: '54px' };
+  const fontMap = { small: '12px', medium: '14px', large: '16px' };
+  const btnH = sizeMap[fb.size];
+  const btnFont = fontMap[fb.size];
+
+  const posStyle: Record<string, string> = {};
+  if (fb.style === 'fixed' || fb.style === 'sticky') {
+    posStyle.position = fb.style;
+  } else {
+    posStyle.position = 'absolute';
+  }
+  if (fb.position.includes('top')) posStyle.top = '16px';
+  if (fb.position.includes('bottom')) posStyle.bottom = '16px';
+  if (fb.position.includes('left')) posStyle.left = '16px';
+  if (fb.position.includes('right')) posStyle.right = '16px';
+
+  const container = document.createElement('div');
+  container.id = 'iaa-floating-container';
+  Object.assign(container.style, {
+    ...posStyle,
+    zIndex: '2147483647',
+    display: 'flex',
+    flexDirection: fb.position.includes('right') ? 'row-reverse' : 'row',
+    gap: '8px',
+    opacity: String(fb.opacity),
+    transition: 'opacity 0.2s',
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+  });
+
+  container.addEventListener('mouseenter', () => { container.style.opacity = '1'; });
+  container.addEventListener('mouseleave', () => { container.style.opacity = String(fb.opacity); });
+
+  // Shared button style factory
+  function makeBtn(label: string, bg: string, hoverBg: string): HTMLButtonElement {
+    const btn = document.createElement('button');
+    btn.textContent = label;
+    Object.assign(btn.style, {
+      height: btnH,
+      padding: '0 20px',
+      border: 'none',
+      borderRadius: '8px',
+      background: bg,
+      color: '#fff',
+      fontSize: btnFont,
+      fontWeight: '600',
+      cursor: 'pointer',
+      boxShadow: '0 2px 8px rgba(0,0,0,0.25)',
+      transition: 'background 0.15s, transform 0.1s',
+      whiteSpace: 'nowrap',
+    });
+    btn.addEventListener('mouseenter', () => { btn.style.background = hoverBg; btn.style.transform = 'scale(1.05)'; });
+    btn.addEventListener('mouseleave', () => { btn.style.background = bg; btn.style.transform = 'scale(1)'; });
+    btn.addEventListener('mousedown', () => { btn.style.transform = 'scale(0.95)'; });
+    btn.addEventListener('mouseup', () => { btn.style.transform = 'scale(1.05)'; });
+    return btn;
+  }
+
+  // "Next" button — clicks native Continue/Submit
+  const nextBtn = makeBtn('Next ▶', '#16213e', '#1a2a4a');
+  nextBtn.addEventListener('click', () => {
+    // Find and click the native Continue or Submit button
+    const allBtns = document.querySelectorAll('button, [role="button"], a.ia-continueButton');
+    for (const b of allBtns) {
+      const text = (b.textContent || '').toLowerCase().trim();
+      if (CONTINUE_KEYWORDS.some(kw => text.includes(kw)) || SUBMIT_KEYWORDS.some(kw => text.includes(kw))) {
+        if (isDisabled(b)) continue;
+        log(`Floating: clicked "${text}"`);
+        (b as HTMLElement).click();
+        return;
+      }
+    }
+    log('Floating: no Continue/Submit button found', 'warning');
+  });
+  container.appendChild(nextBtn);
+
+  // "Skip" button — closes tab (signals orchestrator to move on)
+  if (fb.showSkip) {
+    const skipBtn = makeBtn('Skip ✕', '#6c757d', '#5a6268');
+    skipBtn.addEventListener('click', () => {
+      log('Floating: user clicked Skip');
+      chrome.runtime.sendMessage({ type: 'TAB_SUBMITTED' });
+    });
+    container.appendChild(skipBtn);
+  }
+
+  document.body.appendChild(container);
+
+  // Re-apply on settings change
+  chrome.storage.onChanged.addListener((changes) => {
+    if (changes.settings) {
+      const el = document.getElementById('iaa-floating-container');
+      if (el) el.remove();
+      injectFloatingButton();
+    }
+  });
+}
+
+injectFloatingButton();
 
 // Announce to service worker
 chrome.runtime.sendMessage({
