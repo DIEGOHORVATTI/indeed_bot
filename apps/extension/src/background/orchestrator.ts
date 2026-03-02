@@ -48,6 +48,11 @@ let currentPage = 0;
 let totalPages = 0;
 let estimatedTotalJobs = 0;
 
+// Collection stats
+let collectionExternalApply = 0;
+let collectionDuplicates = 0;
+let collectionAlreadyKnown = 0;
+
 // Worker pool
 let tabWorkers: TabWorker[] = [];
 let collectionTabId: number | null = null;
@@ -99,6 +104,11 @@ export function getStatus(): BotStatus {
     estimatedTotalJobs,
     activeWorkers,
     concurrentTabs: settings?.concurrentTabs || 1,
+    collectionStats: {
+      externalApply: collectionExternalApply,
+      duplicates: collectionDuplicates,
+      alreadyKnown: collectionAlreadyKnown
+    },
     log: log.slice(-50)
   };
 }
@@ -162,6 +172,9 @@ export async function startBot(userSettings: Settings): Promise<void> {
   totalSearchUrls = settings.searchUrls.length;
   tabWorkers = [];
   collectionTabId = null;
+  collectionExternalApply = 0;
+  collectionDuplicates = 0;
+  collectionAlreadyKnown = 0;
 
   await registry.load();
   await cache.load();
@@ -308,22 +321,42 @@ async function collectAllJobs(): Promise<void> {
 
     // Process first page results
     let consecutiveEmptyPages = 0;
-    if (firstResult.links.length > 0) {
-      for (const link of firstResult.links) {
-        if (seenJobKeys.has(link.jobKey)) continue;
-        seenJobKeys.add(link.jobKey);
-        if (await registry.isKnown(link.jobKey)) continue;
-        jobs.push({ url: link.url, jobKey: link.jobKey, status: 'pending' });
+    if (firstResult.links.length > 0 || (firstResult.stats && firstResult.stats.totalCards > 0)) {
+      // Track external apply from stats
+      if (firstResult.stats) {
+        collectionExternalApply += firstResult.stats.externalApply;
       }
-      addLog(
-        'info',
-        `Page 1: +${firstResult.links.length} links, ${jobs.length - batchStartIndex} new`
-      );
+      let pageNew = 0;
+      let pageDupes = 0;
+      let pageKnown = 0;
+      for (const link of firstResult.links) {
+        if (seenJobKeys.has(link.jobKey)) {
+          pageDupes++;
+          collectionDuplicates++;
+          continue;
+        }
+        seenJobKeys.add(link.jobKey);
+        if (await registry.isKnown(link.jobKey)) {
+          pageKnown++;
+          collectionAlreadyKnown++;
+          continue;
+        }
+        jobs.push({ url: link.url, jobKey: link.jobKey, status: 'pending' });
+        pageNew++;
+      }
+      const parts = [`+${pageNew} new`];
+      if (pageDupes > 0) parts.push(`${pageDupes} dupes`);
+      if (pageKnown > 0) parts.push(`${pageKnown} known`);
+      if (firstResult.stats?.externalApply) {
+        parts.push(`${firstResult.stats.externalApply} external`);
+      }
+      addLog('info', `Page 1: ${parts.join(', ')}`);
     } else {
       consecutiveEmptyPages++;
       const statsInfo = firstResult.stats
         ? ` (${firstResult.stats.totalCards} cards, ${firstResult.stats.externalApply} external)`
         : '';
+      if (firstResult.stats) collectionExternalApply += firstResult.stats.externalApply;
       addLog('info', `Page 1 empty${statsInfo}`);
     }
 
@@ -381,6 +414,11 @@ async function collectAllJobs(): Promise<void> {
           continue;
         }
 
+        // Track external apply from stats
+        if (result.stats) {
+          collectionExternalApply += result.stats.externalApply;
+        }
+
         if (result.links.length === 0) {
           globalEmptyStreak++;
           const statsInfo = result.stats
@@ -393,18 +431,32 @@ async function collectAllJobs(): Promise<void> {
         // Got results — reset empty streak
         globalEmptyStreak = 0;
         let pageNew = 0;
+        let pageDupes = 0;
+        let pageKnown = 0;
         for (const link of result.links) {
-          if (seenJobKeys.has(link.jobKey)) continue;
+          if (seenJobKeys.has(link.jobKey)) {
+            pageDupes++;
+            collectionDuplicates++;
+            continue;
+          }
           seenJobKeys.add(link.jobKey);
-          if (await registry.isKnown(link.jobKey)) continue;
+          if (await registry.isKnown(link.jobKey)) {
+            pageKnown++;
+            collectionAlreadyKnown++;
+            continue;
+          }
           jobs.push({ url: link.url, jobKey: link.jobKey, status: 'pending' });
           pageNew++;
         }
         const totalNew = jobs.length - batchStartIndex;
         const pageInfo = totalPages > 0 ? ` (page ${pn}/${totalPages})` : '';
+        const parts = [`+${pageNew} new`];
+        if (pageDupes > 0) parts.push(`${pageDupes} dupes`);
+        if (pageKnown > 0) parts.push(`${pageKnown} known`);
+        if (result.stats?.externalApply) parts.push(`${result.stats.externalApply} external`);
         const totalInfo =
           estimatedTotalJobs > 0 ? ` — ${totalNew}/${estimatedTotalJobs}` : ` — ${totalNew} total`;
-        addLog('info', `Page ${pn}${pageInfo}: +${pageNew} new${totalInfo}`);
+        addLog('info', `Page ${pn}${pageInfo}: ${parts.join(', ')}${totalInfo}`);
       }
 
       broadcastStatus();
@@ -413,13 +465,15 @@ async function collectAllJobs(): Promise<void> {
     }
 
     const totalCollected = jobs.length - batchStartIndex;
+    const summaryParts = [`${totalCollected} Indeed Apply`];
+    if (collectionExternalApply > 0) summaryParts.push(`${collectionExternalApply} external`);
+    if (collectionAlreadyKnown > 0) summaryParts.push(`${collectionAlreadyKnown} already known`);
+    if (collectionDuplicates > 0) summaryParts.push(`${collectionDuplicates} duplicates`);
     addLog(
       'info',
-      `[Link ${searchIdx + 1}/${totalSearchUrls}] Collection complete: ${totalCollected} jobs from ${nextPage - 1} page(s)`
+      `[Link ${searchIdx + 1}/${totalSearchUrls}] Collection complete: ${summaryParts.join(', ')} (${nextPage - 1} pages)`
     );
-    console.log(
-      `[collect] Search URL #${searchIdx + 1} finished: ${totalCollected} jobs collected`
-    );
+    console.log(`[collect] Search URL #${searchIdx + 1} finished: ${summaryParts.join(', ')}`);
 
     // Keep first scraping tab as collectionTabId for reuse as first worker
     collectionTabId = scrapingTabIds[0];

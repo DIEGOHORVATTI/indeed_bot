@@ -2,7 +2,7 @@
  * Popup UI — controls and status display.
  */
 
-import { BotStatus, BotState } from '../types';
+import { BotStatus } from '../types';
 
 const $ = (id: string) => document.getElementById(id)!;
 
@@ -58,12 +58,20 @@ function updateUI(status: BotStatus): void {
   statusBadge.textContent = status.state.replace('_', ' ');
   statusBadge.className = `badge ${status.state}`;
 
-  // Stats
+  // Stats — skipped includes external apply jobs from collection
+  const totalSkipped =
+    status.skippedCount +
+    (status.collectionStats?.externalApply || 0) +
+    (status.collectionStats?.alreadyKnown || 0);
   appliedCount.textContent = String(status.appliedCount);
-  skippedCount.textContent = String(status.skippedCount);
+  skippedCount.textContent = String(totalSkipped);
   failedCountEl.textContent = String(status.failedCount);
   pendingCountEl.textContent = String(status.pendingJobs);
-  totalCount.textContent = String(status.totalJobs);
+  totalCount.textContent = String(
+    status.totalJobs +
+      (status.collectionStats?.externalApply || 0) +
+      (status.collectionStats?.alreadyKnown || 0)
+  );
 
   // Progress bar & link info
   const isActive = status.state !== 'idle';
@@ -75,13 +83,15 @@ function updateUI(status: BotStatus): void {
       const pageInfo = status.totalPages
         ? `Page ${status.currentPage || 1}/${status.totalPages}`
         : `Page ${status.currentPage || 1}`;
-      const jobInfo = status.estimatedTotalJobs
-        ? `${status.totalJobs}/${status.estimatedTotalJobs} jobs`
-        : `${status.totalJobs} jobs`;
-      linkInfo.innerHTML = `<strong>Collecting:</strong> ${pageInfo} — ${jobInfo} found`;
+      const cs = status.collectionStats;
+      const parts = [`${status.totalJobs} apply`];
+      if (cs?.externalApply) parts.push(`${cs.externalApply} external`);
+      if (cs?.alreadyKnown) parts.push(`${cs.alreadyKnown} known`);
+      linkInfo.innerHTML = `<strong>Collecting:</strong> ${pageInfo} — ${parts.join(', ')}`;
 
-      const pct = status.estimatedTotalJobs
-        ? Math.round((status.totalJobs / status.estimatedTotalJobs) * 100)
+      // Progress based on pages scraped vs total
+      const pct = status.totalPages
+        ? Math.round(((status.currentPage || 1) / status.totalPages) * 100)
         : 0;
       progressFill.style.width = `${pct}%`;
     } else {

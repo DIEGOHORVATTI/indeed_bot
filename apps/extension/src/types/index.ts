@@ -239,6 +239,12 @@ export interface BotStatus {
   currentPage?: number;
   totalPages?: number;
   estimatedTotalJobs?: number;
+  // Collection stats (breakdown of why jobs were skipped during scraping)
+  collectionStats?: {
+    externalApply: number;
+    duplicates: number;
+    alreadyKnown: number;
+  };
   // Worker pool
   activeWorkers?: number;
   concurrentTabs?: number;
