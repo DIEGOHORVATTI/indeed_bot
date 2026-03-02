@@ -52,7 +52,7 @@ export async function askClaudeForAnswer(
     const response = await fetch(`${backendUrl}/api/answer`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify(body)
     });
 
     if (!response.ok) {
@@ -66,6 +66,10 @@ export async function askClaudeForAnswer(
 
     // If options provided, find best match
     if (options && options.length > 0) {
+      // Multi-select: answer contains | separator — return as-is for caller to parse
+      if (answer.includes('|')) {
+        return answer;
+      }
       const lower = answer.toLowerCase();
       for (const opt of options) {
         if (
@@ -101,13 +105,13 @@ export async function generateTailoredContent(
     jobCompany: jobInfo.company,
     jobDescription: jobInfo.description.substring(0, 4000),
     baseCv,
-    baseCoverLetter,
+    baseCoverLetter
   };
 
   const response = await fetch(`${backendUrl}/api/tailor`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify(body)
   });
 
   if (!response.ok) {
@@ -132,7 +136,7 @@ export async function generatePdfFromHtml(
   const response = await fetch(`${backendUrl}/api/generate-pdf`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ html, filename }),
+    body: JSON.stringify({ html, filename })
   });
 
   if (!response.ok) {
@@ -141,4 +145,23 @@ export async function generatePdfFromHtml(
   }
 
   return response.arrayBuffer();
+}
+
+/**
+ * Try to fetch an existing PDF from the backend output/ folder.
+ * Returns the PDF ArrayBuffer if found, or null if not.
+ */
+export async function fetchExistingPdf(
+  backendUrl: string,
+  filename: string
+): Promise<ArrayBuffer | null> {
+  if (!backendUrl || !filename) return null;
+
+  try {
+    const response = await fetch(`${backendUrl}/api/pdf/${encodeURIComponent(filename)}`);
+    if (!response.ok) return null;
+    return response.arrayBuffer();
+  } catch {
+    return null;
+  }
 }

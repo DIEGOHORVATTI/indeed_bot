@@ -2,7 +2,7 @@
  * Options page — settings management.
  */
 
-import { Settings, DEFAULT_SETTINGS } from '../types';
+import { Settings, DEFAULT_SETTINGS, FloatingButtonSettings } from '../types';
 
 const $ = (id: string) => document.getElementById(id) as HTMLInputElement;
 
@@ -11,6 +11,7 @@ const fields = {
   searchUrls: $('search-urls') as unknown as HTMLTextAreaElement,
   language: $('language') as unknown as HTMLSelectElement,
   maxApplies: $('max-applies'),
+  concurrentTabs: $('concurrent-tabs'),
   availableToday: $('available-today'),
   personalizationEnabled: $('personalization-enabled'),
   baseCv: $('base-cv') as unknown as HTMLTextAreaElement,
@@ -28,6 +29,13 @@ const fields = {
   profileGithub: $('profile-github'),
   profileInstagram: $('profile-instagram'),
   profilePortfolio: $('profile-portfolio'),
+  // Floating button
+  fbEnabled: $('fb-enabled'),
+  fbPosition: $('fb-position') as unknown as HTMLSelectElement,
+  fbStyle: $('fb-style') as unknown as HTMLSelectElement,
+  fbSize: $('fb-size') as unknown as HTMLSelectElement,
+  fbOpacity: $('fb-opacity'),
+  fbShowSkip: $('fb-show-skip')
 };
 
 // ── Load Settings ──
@@ -39,11 +47,22 @@ async function loadSettings(): Promise<void> {
   fields.searchUrls.value = s.searchUrls.join('\n');
   fields.language.value = s.language;
   fields.maxApplies.value = String(s.maxApplies);
+  fields.concurrentTabs.value = String(s.concurrentTabs || 1);
   fields.availableToday.checked = s.availableToday !== false; // default true
+  // Floating button
+  const fb = { ...DEFAULT_SETTINGS.floatingButton, ...s.floatingButton };
+  fields.fbEnabled.checked = fb.enabled;
+  fields.fbPosition.value = fb.position;
+  fields.fbStyle.value = fb.style;
+  fields.fbSize.value = fb.size;
+  fields.fbOpacity.value = String(fb.opacity);
+  fields.fbShowSkip.checked = fb.showSkip;
+
   fields.personalizationEnabled.checked = s.personalization.enabled;
   fields.baseCv.value = s.personalization.baseCv;
   fields.baseCover.value = s.personalization.baseCoverLetter;
-  fields.baseProfile.value = s.personalization.baseProfile || DEFAULT_SETTINGS.personalization.baseProfile;
+  fields.baseProfile.value =
+    s.personalization.baseProfile || DEFAULT_SETTINGS.personalization.baseProfile;
   fields.profileName.value = s.profile.name;
   fields.profileEmail.value = s.profile.email;
   fields.profilePhone.value = s.profile.phone;
@@ -67,15 +86,27 @@ async function saveSettings(): Promise<void> {
 
   const settings: Settings = {
     backendUrl: prev.backendUrl || DEFAULT_SETTINGS.backendUrl,
-    searchUrls: fields.searchUrls.value.split('\n').map(u => u.trim()).filter(Boolean),
+    searchUrls: fields.searchUrls.value
+      .split('\n')
+      .map((u) => u.trim())
+      .filter(Boolean),
     language: fields.language.value,
     maxApplies: parseInt(fields.maxApplies.value) || 0,
+    concurrentTabs: Math.max(1, Math.min(5, parseInt(fields.concurrentTabs.value) || 1)),
     availableToday: fields.availableToday.checked,
+    floatingButton: {
+      enabled: fields.fbEnabled.checked,
+      position: fields.fbPosition.value as FloatingButtonSettings['position'],
+      style: fields.fbStyle.value as FloatingButtonSettings['style'],
+      size: fields.fbSize.value as FloatingButtonSettings['size'],
+      opacity: Math.max(0.1, Math.min(1, parseFloat(fields.fbOpacity.value) || 0.9)),
+      showSkip: fields.fbShowSkip.checked
+    },
     personalization: {
       enabled: fields.personalizationEnabled.checked,
       baseCv: fields.baseCv.value,
       baseCoverLetter: fields.baseCover.value,
-      baseProfile: fields.baseProfile.value,
+      baseProfile: fields.baseProfile.value
     },
     profile: {
       ...DEFAULT_SETTINGS.profile,
@@ -91,8 +122,8 @@ async function saveSettings(): Promise<void> {
       linkedin: fields.profileLinkedin.value.trim(),
       github: fields.profileGithub.value.trim(),
       instagram: fields.profileInstagram.value.trim(),
-      portfolio: fields.profilePortfolio.value.trim(),
-    },
+      portfolio: fields.profilePortfolio.value.trim()
+    }
   };
 
   await chrome.storage.local.set({ settings });
@@ -124,10 +155,7 @@ async function importLinkedIn(): Promise<void> {
 
   try {
     const response = await new Promise<any>((resolve) => {
-      chrome.runtime.sendMessage(
-        { type: 'SCRAPE_LINKEDIN', payload: { username } },
-        resolve,
-      );
+      chrome.runtime.sendMessage({ type: 'SCRAPE_LINKEDIN', payload: { username } }, resolve);
     });
 
     if (response?.error) {
@@ -208,7 +236,7 @@ async function importLinkedIn(): Promise<void> {
     if (data.name && data.headline) {
       const coverLines = [
         `Prezado(a) Recrutador(a),\n`,
-        `Meu nome é ${data.name} e sou ${data.headline}.`,
+        `Meu nome é ${data.name} e sou ${data.headline}.`
       ];
       if (data.about) {
         const firstSentence = data.about.split('.')[0] + '.';
@@ -216,12 +244,14 @@ async function importLinkedIn(): Promise<void> {
       }
       if (data.experience?.length) {
         const latest = data.experience[0];
-        coverLines.push(`Atualmente atuo como ${latest.title}${latest.company ? ` na ${latest.company}` : ''}.`);
+        coverLines.push(
+          `Atualmente atuo como ${latest.title}${latest.company ? ` na ${latest.company}` : ''}.`
+        );
       }
       coverLines.push(
         `\nEstou à disposição para uma conversa e posso contribuir significativamente para o sucesso da equipe.\n`,
         `Atenciosamente,`,
-        data.name,
+        data.name
       );
       fields.baseCover.value = coverLines.join('\n');
     }
@@ -235,7 +265,7 @@ async function importLinkedIn(): Promise<void> {
       'Portfolio/Website:': `Portfolio/Website: ${data.portfolio || ''}`,
       'Instagram:': `Instagram: ${data.instagram || ''}`,
       'Cidade:': `Cidade: ${data.city || ''}`,
-      'Estado:': `Estado: ${data.state || ''}`,
+      'Estado:': `Estado: ${data.state || ''}`
     };
     let updatedProfile = currentProfile;
     for (const [key, value] of Object.entries(replacements)) {

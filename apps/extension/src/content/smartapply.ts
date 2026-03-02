@@ -7,16 +7,31 @@
 
 import { Message } from '../types';
 import {
-  findFirst, findAll, clickFirst, isVisible, isDisabled,
-  fillInput, selectOption, setInputFiles, getLabelForInput, verifyUploadAccepted,
-  getInputConstraints, validateAnswer, detectValidationError,
-  InputConstraints,
+  findFirst,
+  findAll,
+  clickFirst,
+  isVisible,
+  isDisabled,
+  fillInput,
+  selectOption,
+  setInputFiles,
+  getLabelForInput,
+  verifyUploadAccepted,
+  getInputConstraints,
+  validateAnswer,
+  detectValidationError,
+  InputConstraints
 } from '../utils/selectors';
 import {
-  SUBMIT_SELECTORS, CONTINUE_SELECTORS,
-  SUBMIT_KEYWORDS, CONTINUE_KEYWORDS, SKIP_KEYWORDS,
-  RESUME_OPTIONS_SELECTORS, UPLOAD_BUTTON_SELECTORS,
-  COVER_LETTER_SELECTORS, RESUME_CARD_SELECTORS,
+  SUBMIT_SELECTORS,
+  CONTINUE_SELECTORS,
+  SUBMIT_KEYWORDS,
+  CONTINUE_KEYWORDS,
+  SKIP_KEYWORDS,
+  RESUME_OPTIONS_SELECTORS,
+  UPLOAD_BUTTON_SELECTORS,
+  COVER_LETTER_SELECTORS,
+  RESUME_CARD_SELECTORS
 } from '../utils/i18n';
 
 // ── State ──
@@ -29,14 +44,16 @@ let currentBaseProfile = '';
 function log(msg: string, level: 'info' | 'warning' | 'error' = 'info'): void {
   console.log(`[smartapply] ${msg}`);
   // Send to Activity Log in the popup UI (fire-and-forget)
-  chrome.runtime.sendMessage({
-    type: 'ADD_LOG',
-    payload: { level, message: `[wizard] ${msg}` },
-  }).catch(() => {});
+  chrome.runtime
+    .sendMessage({
+      type: 'ADD_LOG',
+      payload: { level, message: `[wizard] ${msg}` }
+    })
+    .catch(() => {});
 }
 
 function waitMs(ms: number): Promise<void> {
-  return new Promise(r => setTimeout(r, ms));
+  return new Promise((r) => setTimeout(r, ms));
 }
 
 /** Format today's date in the given format (DD/MM/YYYY, MM/DD/YYYY, YYYY-MM-DD). */
@@ -58,9 +75,11 @@ async function askClaude(
   constraints?: Partial<InputConstraints>,
   errorContext?: string
 ): Promise<string | null> {
-  log(`🤖 AI Question: "${question}"${options ? ` [options: ${options.join(', ')}]` : ''}${constraints ? ` [constraints: ${JSON.stringify(constraints)}]` : ''}${errorContext ? ` [retry: ${errorContext}]` : ''}`);
+  log(
+    `🤖 AI Question: "${question}"${options ? ` [options: ${options.join(', ')}]` : ''}${constraints ? ` [constraints: ${JSON.stringify(constraints)}]` : ''}${errorContext ? ` [retry: ${errorContext}]` : ''}`
+  );
 
-  return new Promise(resolve => {
+  return new Promise((resolve) => {
     chrome.runtime.sendMessage(
       {
         type: 'ASK_CLAUDE',
@@ -69,17 +88,19 @@ async function askClaude(
           options,
           jobTitle: currentJobTitle,
           baseProfile: currentBaseProfile,
-          constraints: constraints ? {
-            type: constraints.type,
-            maxLength: constraints.maxLength,
-            minLength: constraints.minLength,
-            min: constraints.min,
-            max: constraints.max,
-            pattern: constraints.pattern,
-            placeholder: constraints.placeholder,
-          } : undefined,
-          errorContext,
-        },
+          constraints: constraints
+            ? {
+                type: constraints.type,
+                maxLength: constraints.maxLength,
+                minLength: constraints.minLength,
+                min: constraints.min,
+                max: constraints.max,
+                pattern: constraints.pattern,
+                placeholder: constraints.placeholder
+              }
+            : undefined,
+          errorContext
+        }
       },
       (response) => {
         const answer = response?.payload?.answer || null;
@@ -110,7 +131,7 @@ async function waitForFileInput(timeoutMs = 3000): Promise<HTMLInputElement | nu
 function findResumeFileInput(): HTMLInputElement | null {
   return document.querySelector<HTMLInputElement>(
     '[data-testid="resume-selection-file-resume-upload-radio-card-file-input"], ' +
-    '[data-testid="resume-selection-file-resume-radio-card-file-input"]'
+      '[data-testid="resume-selection-file-resume-radio-card-file-input"]'
   );
 }
 
@@ -275,12 +296,16 @@ async function handleResumeStep(pdfData?: ArrayBuffer, pdfFilename?: string): Pr
   if (!pdfData || !pdfFilename) return false;
 
   const file = new File([pdfData], pdfFilename, { type: 'application/pdf' });
-  log(`handleResumeStep: file="${pdfFilename}" size=${file.size} bytes (pdfData.byteLength=${pdfData.byteLength})`);
+  log(
+    `handleResumeStep: file="${pdfFilename}" size=${file.size} bytes (pdfData.byteLength=${pdfData.byteLength})`
+  );
 
   // Detect resume-selection page and use targeted approach first
   const isResumeSelectionPage =
     window.location.href.includes('resume-selection') ||
-    !!document.querySelector('[data-testid*="resume-selection"], [class*="resume-selection"], [id*="resume-selection"]');
+    !!document.querySelector(
+      '[data-testid*="resume-selection"], [class*="resume-selection"], [id*="resume-selection"]'
+    );
 
   if (isResumeSelectionPage) {
     log('Detected resume-selection page, using targeted approach');
@@ -332,12 +357,21 @@ async function handleResumeStep(pdfData?: ArrayBuffer, pdfFilename?: string): Pr
 
   // Strategy 4: Scan ALL clickables for upload-related text
   const allClickables = [...document.querySelectorAll('button, a, label, [role="button"]')];
-  const uploadKeywords = ['upload', 'carregar', 'enviar arquivo', 'escolher arquivo', 'choose file', 'select file', 'alterar currículo', 'change resume'];
+  const uploadKeywords = [
+    'upload',
+    'carregar',
+    'enviar arquivo',
+    'escolher arquivo',
+    'choose file',
+    'select file',
+    'alterar currículo',
+    'change resume'
+  ];
   for (const el of allClickables) {
     if (!isVisible(el as Element)) continue;
     const text = (el.textContent || '').toLowerCase().trim();
     const ariaLabel = (el.getAttribute('aria-label') || '').toLowerCase();
-    if (uploadKeywords.some(kw => text.includes(kw) || ariaLabel.includes(kw))) {
+    if (uploadKeywords.some((kw) => text.includes(kw) || ariaLabel.includes(kw))) {
       log(`Strategy 4: clicking: "${text || ariaLabel}"`);
       (el as HTMLElement).click();
       const fi = await waitForFileInput(3000);
@@ -360,7 +394,10 @@ async function handleResumeStep(pdfData?: ArrayBuffer, pdfFilename?: string): Pr
   // Strategy 6: Select existing resume card (last resort — uses old CV, not new)
   const card = findFirst(RESUME_CARD_SELECTORS);
   if (card) {
-    log('Strategy 6: clicking existing card (WARNING: using old CV, not the new dynamic one)', 'warning');
+    log(
+      'Strategy 6: clicking existing card (WARNING: using old CV, not the new dynamic one)',
+      'warning'
+    );
     (card as HTMLElement).click();
     return false;
   }
@@ -373,7 +410,7 @@ async function uploadResumeViaApi(file: File): Promise<boolean> {
   let csrfToken = '';
 
   // Source 1: Cookies
-  const cookies = document.cookie.split(';').map(c => c.trim());
+  const cookies = document.cookie.split(';').map((c) => c.trim());
   for (const c of cookies) {
     if (c.startsWith('XSRF-TOKEN=') || c.startsWith('INDEED_CSRF_TOKEN=') || c.startsWith('CTK=')) {
       csrfToken = decodeURIComponent(c.split('=')[1] || '');
@@ -383,7 +420,11 @@ async function uploadResumeViaApi(file: File): Promise<boolean> {
 
   // Source 2: Meta tags
   if (!csrfToken) {
-    const metaSelectors = ['meta[name="csrf-token"]', 'meta[name="_csrf"]', 'meta[name="indeed-csrf-token"]'];
+    const metaSelectors = [
+      'meta[name="csrf-token"]',
+      'meta[name="_csrf"]',
+      'meta[name="indeed-csrf-token"]'
+    ];
     for (const sel of metaSelectors) {
       const meta = document.querySelector(sel);
       if (meta) {
@@ -399,8 +440,11 @@ async function uploadResumeViaApi(file: File): Promise<boolean> {
     if (nextDataEl) {
       try {
         const data = JSON.parse(nextDataEl.textContent || '');
-        csrfToken = data?.props?.pageProps?.csrfToken || data?.props?.csrfToken || data?.csrfToken || '';
-      } catch { /* ignore */ }
+        csrfToken =
+          data?.props?.pageProps?.csrfToken || data?.props?.csrfToken || data?.csrfToken || '';
+      } catch {
+        /* ignore */
+      }
     }
   }
 
@@ -425,10 +469,10 @@ async function uploadResumeViaApi(file: File): Promise<boolean> {
       headers: {
         'ia-upload-category': 'resume',
         'x-xsrf-token': csrfToken,
-        'x-csrf-token': csrfToken,
+        'x-csrf-token': csrfToken
       },
       body: fd,
-      credentials: 'include',
+      credentials: 'include'
     });
 
     if (resp.ok) {
@@ -452,9 +496,9 @@ async function handleCoverLetter(pdfData?: ArrayBuffer, pdfFilename?: string): P
   // Strategy 1: Direct file input for cover letter
   const directInput = document.querySelector<HTMLInputElement>(
     '[data-testid="CoverLetterInput"] input[type="file"], ' +
-    'input[accept*="pdf"][name*="cover"], ' +
-    '[data-testid*="coverLetter" i] input[type="file"], ' +
-    '[data-testid*="cover-letter" i] input[type="file"]'
+      'input[accept*="pdf"][name*="cover"], ' +
+      '[data-testid*="coverLetter" i] input[type="file"], ' +
+      '[data-testid*="cover-letter" i] input[type="file"]'
   );
   if (directInput) {
     log('Cover letter strategy 1: direct input found');
@@ -477,12 +521,18 @@ async function handleCoverLetter(pdfData?: ArrayBuffer, pdfFilename?: string): P
 
   // Strategy 3: Scan all clickables for cover letter keywords
   const allClickables = [...document.querySelectorAll('button, a, label, [role="button"]')];
-  const coverKeywords = ['cover letter', 'carta de apresentação', 'carta de apresentacao',
-                         'lettre de motivation', 'anschreiben', 'carta de presentación'];
+  const coverKeywords = [
+    'cover letter',
+    'carta de apresentação',
+    'carta de apresentacao',
+    'lettre de motivation',
+    'anschreiben',
+    'carta de presentación'
+  ];
   for (const el of allClickables) {
     if (!isVisible(el as Element)) continue;
     const text = (el.textContent || '').toLowerCase().trim();
-    if (coverKeywords.some(kw => text.includes(kw))) {
+    if (coverKeywords.some((kw) => text.includes(kw))) {
       log(`Cover letter strategy 3: clicking "${text}"`);
       (el as HTMLElement).click();
       const fi = await waitForFileInput(3000);
@@ -496,6 +546,57 @@ async function handleCoverLetter(pdfData?: ArrayBuffer, pdfFilename?: string): P
   log('WARNING: No cover letter upload strategy worked', 'warning');
 }
 
+// ── Additional Documents (Review Page) ──
+
+/** On the review page, check for "Supporting documents" / "Documentos de apoio" section
+ *  and click "Add" / "Adicionar" to navigate to the additional-documents page
+ *  where the cover letter text will be auto-filled. */
+async function handleAdditionalDocuments(): Promise<boolean> {
+  // Only act on the review page
+  if (!window.location.href.includes('review-module')) return false;
+
+  // Find the "Add" / "Adicionar" link/button near the additional/supporting documents section
+  const addKeywords = ['adicionar', 'add'];
+  const sectionKeywords = [
+    'documentos de apoio',
+    'supporting documents',
+    'additional documents',
+    'documentos adicionais',
+    'cover letter',
+    'carta de apresentação'
+  ];
+
+  // Check if the section exists on the page
+  const bodyText = document.body.innerText.toLowerCase();
+  const hasSection = sectionKeywords.some((kw) => bodyText.includes(kw));
+  if (!hasSection) return false;
+
+  // Check if documents are already added (no "Adicionar" / "Add" link visible)
+  const allClickables = [...document.querySelectorAll('a, button, [role="button"]')];
+  for (const el of allClickables) {
+    if (!isVisible(el as Element)) continue;
+    const text = (el.textContent || '').toLowerCase().trim();
+    if (
+      addKeywords.some((kw) => text === kw) ||
+      text.includes('adicionar') ||
+      text.includes('add document')
+    ) {
+      // Verify it's near the supporting documents section by checking nearby text
+      const parent = (el as HTMLElement).closest('section, div[class], [data-testid]');
+      const parentText = (parent?.textContent || '').toLowerCase();
+      if (sectionKeywords.some((kw) => parentText.includes(kw))) {
+        log(
+          `📎 Review page: clicking "${(el as HTMLElement).textContent?.trim()}" to add supporting documents`
+        );
+        (el as HTMLElement).click();
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 // ── Special Page Handling ──
 
 /** Handle known Indeed wizard pages that don't have standard form fields. */
@@ -504,17 +605,42 @@ async function handleSpecialPages(): Promise<boolean> {
   const privacyForm = document.querySelector('[data-testid="privacy-settings-form"]');
   if (privacyForm) {
     log('🔒 Special page: privacy-settings detected');
-    const optinRadio = document.querySelector<HTMLInputElement>('[data-testid="privacy-settings-optin-input"]');
+    const optinRadio = document.querySelector<HTMLInputElement>(
+      '[data-testid="privacy-settings-optin-input"]'
+    );
     if (optinRadio && !optinRadio.checked) {
       optinRadio.click();
       log('🔒 Clicked optin radio');
       await waitMs(300);
     }
-    const continueBtn = privacyForm.querySelector<HTMLButtonElement>('[data-testid="continue-button"]');
+    const continueBtn = privacyForm.querySelector<HTMLButtonElement>(
+      '[data-testid="continue-button"]'
+    );
     if (continueBtn) {
       continueBtn.click();
       log('🔒 Clicked continue on privacy-settings');
       return true;
+    }
+  }
+
+  // Additional-documents page: auto-select "Write a cover letter" radio if available
+  if (window.location.href.includes('additional-documents')) {
+    const coverLetterRadio = document.querySelector<HTMLInputElement>(
+      '[data-testid="cover-letter-radio-card-input"], input[name="cover-letter"][id*="cover-letter-radio-card"]'
+    );
+    const noCoverLetterRadio = document.querySelector<HTMLInputElement>(
+      '[data-testid="no-cover-letter-radio-card-input"], input[name="cover-letter"][id*="no-cover-letter"]'
+    );
+    if (coverLetterRadio && !coverLetterRadio.checked) {
+      coverLetterRadio.click();
+      log('📎 Auto-selected "Write a cover letter" on additional-documents page');
+      await waitMs(500);
+    }
+    // Prevent the no-cover-letter option from being selected by questionnaire logic
+    if (noCoverLetterRadio && noCoverLetterRadio.checked && coverLetterRadio) {
+      coverLetterRadio.click();
+      log('📎 Corrected: switched from "no cover letter" to "write cover letter"');
+      await waitMs(500);
     }
   }
 
@@ -527,11 +653,21 @@ async function handleSpecialPages(): Promise<boolean> {
     const lower = label.toLowerCase();
     // Auto-check consent, agreement, terms, notifications, privacy, allow
     const autoCheckKeywords = [
-      'agree', 'aceito', 'concordo', 'consent', 'autorizo',
-      'allow', 'permitir', 'terms', 'termos', 'privacy',
-      'notification', 'notificaç', 'comunicaç',
+      'agree',
+      'aceito',
+      'concordo',
+      'consent',
+      'autorizo',
+      'allow',
+      'permitir',
+      'terms',
+      'termos',
+      'privacy',
+      'notification',
+      'notificaç',
+      'comunicaç'
     ];
-    if (autoCheckKeywords.some(kw => lower.includes(kw))) {
+    if (autoCheckKeywords.some((kw) => lower.includes(kw))) {
       cb.click();
       log(`☑️ Auto-checked: "${label}"`);
       await waitMs(200);
@@ -572,7 +708,9 @@ function getSimplifiedDom(): string {
         const checked = inp.checked ? ' checked' : '';
         const tid = inp.getAttribute('data-testid') || '';
         const lbl = getLabelForInput(inp);
-        parts.push(`    <input type="${type}" value="${val}"${checked} data-testid="${tid}" label="${lbl}"/>`);
+        parts.push(
+          `    <input type="${type}" value="${val}"${checked} data-testid="${tid}" label="${lbl}"/>`
+        );
       }
       parts.push('  </fieldset>');
     }
@@ -699,13 +837,16 @@ async function handleQuestionnaire(): Promise<{ needsUserInput: boolean; fieldLa
     }
 
     const constraints = getInputConstraints(inp);
-    log(`📝 Field: "${label}" [type=${constraints.type}, required=${constraints.required}${constraints.placeholder ? `, placeholder=${constraints.placeholder}` : ''}${constraints.maxLength ? `, maxLen=${constraints.maxLength}` : ''}${constraints.min ? `, min=${constraints.min}` : ''}${constraints.max ? `, max=${constraints.max}` : ''}${constraints.pattern ? `, pattern=${constraints.pattern}` : ''}]`);
+    log(
+      `📝 Field: "${label}" [type=${constraints.type}, required=${constraints.required}${constraints.placeholder ? `, placeholder=${constraints.placeholder}` : ''}${constraints.maxLength ? `, maxLen=${constraints.maxLength}` : ''}${constraints.min ? `, min=${constraints.min}` : ''}${constraints.max ? `, max=${constraints.max}` : ''}${constraints.pattern ? `, pattern=${constraints.pattern}` : ''}]`
+    );
 
     // Detect if this is actually a date field (Indeed uses type="text" for dates)
-    const isDateField = constraints.type === 'date'
-      || !!constraints.placeholder?.match(/[DMY]{2,4}/i)
-      || !!(inp.getAttribute('aria-label') || '').match(/dat[ae]/i)
-      || !!label.match(/\b(data|date|when|quando|início|start|término|end|from|until|até)\b/i);
+    const isDateField =
+      constraints.type === 'date' ||
+      !!constraints.placeholder?.match(/[DMY]{2,4}/i) ||
+      !!(inp.getAttribute('aria-label') || '').match(/dat[ae]/i) ||
+      !!label.match(/\b(data|date|when|quando|início|start|término|end|from|until|até)\b/i);
 
     // If we detected it's a date but have no format hint, check error messages on page
     if (isDateField && !constraints.placeholder?.match(/[DMY]{2,4}/i)) {
@@ -726,8 +867,11 @@ async function handleQuestionnaire(): Promise<{ needsUserInput: boolean; fieldLa
     let enrichedLabel = label;
     if (isDateField && constraints.placeholder) {
       enrichedLabel = `${label} (MUST answer in exact format: ${constraints.placeholder}, example: ${
-        constraints.placeholder === 'DD/MM/YYYY' ? '15/03/2024' :
-        constraints.placeholder === 'MM/DD/YYYY' ? '03/15/2024' : '2024-03-15'
+        constraints.placeholder === 'DD/MM/YYYY'
+          ? '15/03/2024'
+          : constraints.placeholder === 'MM/DD/YYYY'
+            ? '03/15/2024'
+            : '2024-03-15'
       })`;
     } else if (constraints.placeholder) {
       if (!label.toLowerCase().includes(constraints.placeholder.toLowerCase())) {
@@ -747,7 +891,7 @@ async function handleQuestionnaire(): Promise<{ needsUserInput: boolean; fieldLa
 
     // If date field + "available today" setting → fill with today, skip AI entirely
     if (isDateField) {
-      const settings = await new Promise<any>(resolve => {
+      const settings = await new Promise<any>((resolve) => {
         chrome.runtime.sendMessage({ type: 'GET_STATE' }, (resp) => resolve(resp?.payload));
       }).catch(() => null);
       // Check availableToday setting (stored in chrome.storage)
@@ -775,7 +919,10 @@ async function handleQuestionnaire(): Promise<{ needsUserInput: boolean; fieldLa
       // Pre-fill validation
       const validation = validateAnswer(answer, constraints);
       if (!validation.valid) {
-        log(`⚠️ Pre-validation failed for "${label}": ${validation.error} (answer="${answer}", attempt ${attempt + 1}/${MAX_RETRIES + 1})`, 'warning');
+        log(
+          `⚠️ Pre-validation failed for "${label}": ${validation.error} (answer="${answer}", attempt ${attempt + 1}/${MAX_RETRIES + 1})`,
+          'warning'
+        );
         if (attempt < MAX_RETRIES) {
           errorContext = `Previous answer "${answer}" was rejected: ${validation.error}. Generate a valid answer.`;
           continue;
@@ -803,7 +950,10 @@ async function handleQuestionnaire(): Promise<{ needsUserInput: boolean; fieldLa
       // Post-fill validation (check browser/UI errors)
       const domError = detectValidationError(inp);
       if (domError) {
-        log(`⚠️ Post-fill error for "${label}": ${domError} (answer="${answer}", attempt ${attempt + 1}/${MAX_RETRIES + 1})`, 'warning');
+        log(
+          `⚠️ Post-fill error for "${label}": ${domError} (answer="${answer}", attempt ${attempt + 1}/${MAX_RETRIES + 1})`,
+          'warning'
+        );
         if (attempt < MAX_RETRIES) {
           fillInput(inp, ''); // Clear field for retry
           errorContext = `Previous answer "${answer}" triggered error: "${domError}". Generate a different answer.`;
@@ -853,12 +1003,12 @@ async function handleQuestionnaire(): Promise<{ needsUserInput: boolean; fieldLa
         let idx = optionTexts.indexOf(answer);
         if (idx < 0) {
           const lower = answer.toLowerCase().trim();
-          idx = optionTexts.findIndex(t => t.toLowerCase().trim() === lower);
+          idx = optionTexts.findIndex((t) => t.toLowerCase().trim() === lower);
         }
         if (idx < 0) {
           const lower = answer.toLowerCase().trim();
-          idx = optionTexts.findIndex(t =>
-            t.toLowerCase().trim().includes(lower) || lower.includes(t.toLowerCase().trim())
+          idx = optionTexts.findIndex(
+            (t) => t.toLowerCase().trim().includes(lower) || lower.includes(t.toLowerCase().trim())
           );
         }
         if (idx >= 0) {
@@ -867,7 +1017,9 @@ async function handleQuestionnaire(): Promise<{ needsUserInput: boolean; fieldLa
         } else {
           // Fallback: select first non-placeholder option
           selectOption(sel, optionValues[0]);
-          log(`⚠️ No match for "${answer}" in select "${label}", used first option: "${optionTexts[0]}"`);
+          log(
+            `⚠️ No match for "${answer}" in select "${label}", used first option: "${optionTexts[0]}"`
+          );
         }
       } else {
         // No Claude answer — select first option as fallback
@@ -891,18 +1043,25 @@ async function handleQuestionnaire(): Promise<{ needsUserInput: boolean; fieldLa
   }
 
   for (const [name, groupRadios] of radioGroups) {
+    // Skip cover-letter radio group — handled separately by handleCoverLetter / additional-documents logic
+    if (name === 'cover-letter') continue;
+
     const checked = document.querySelector<HTMLInputElement>(`input[name="${name}"]:checked`);
     if (checked) continue;
 
-    const optionLabels = groupRadios.map(r => getLabelForInput(r));
+    const optionLabels = groupRadios.map((r) => getLabelForInput(r));
 
     let groupLabel = '';
     try {
       // Walk up to find the question container (not the individual radio wrapper)
-      const questionContainer = groupRadios[0].closest('[data-testid*="input-q_"], .ia-Questions-item, fieldset');
+      const questionContainer = groupRadios[0].closest(
+        '[data-testid*="input-q_"], .ia-Questions-item, fieldset'
+      );
       if (questionContainer) {
         // Look for the label/heading of the question group (not individual radio labels)
-        const labelEl = questionContainer.querySelector('[data-testid*="-label"] [data-testid="safe-markup"], legend, [class*="label"]');
+        const labelEl = questionContainer.querySelector(
+          '[data-testid*="-label"] [data-testid="safe-markup"], legend, [class*="label"]'
+        );
         groupLabel = labelEl?.textContent?.trim() || '';
       }
       if (!groupLabel) {
@@ -942,6 +1101,96 @@ async function handleQuestionnaire(): Promise<{ needsUserInput: boolean; fieldLa
     }
   }
 
+  // Checkbox groups (multi-select questions)
+  const checkboxGroups = new Map<string, HTMLInputElement[]>();
+  const allCheckboxes = document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+  for (const cb of allCheckboxes) {
+    if (!isVisible(cb)) continue;
+    const name = cb.name;
+    if (!name) continue;
+    // Skip consent/agreement checkboxes (already handled above)
+    const cbLabel = getLabelForInput(cb);
+    if (!cbLabel) continue;
+    if (!checkboxGroups.has(name)) checkboxGroups.set(name, []);
+    checkboxGroups.get(name)!.push(cb);
+  }
+
+  for (const [name, groupCbs] of checkboxGroups) {
+    // Skip if only 1 checkbox (likely a consent checkbox, already handled)
+    if (groupCbs.length < 2) continue;
+    // Skip if any already checked (user or bot already interacted)
+    if (groupCbs.some((cb) => cb.checked)) continue;
+
+    const optionLabels = groupCbs.map((cb) => getLabelForInput(cb) || cb.value);
+
+    let groupLabel = '';
+    try {
+      const questionContainer = groupCbs[0].closest(
+        '[data-testid*="input-q_"], .ia-Questions-item, fieldset'
+      );
+      if (questionContainer) {
+        const labelEl = questionContainer.querySelector(
+          '[data-testid*="-label"] [data-testid="safe-markup"], legend, [class*="label"]'
+        );
+        groupLabel = labelEl?.textContent?.trim() || '';
+      }
+      if (!groupLabel) {
+        const parent = groupCbs[0].closest('fieldset, [class*="Questions-item"], [id^="q_"]');
+        const allLabels = parent?.querySelectorAll('label, legend, span') || [];
+        for (const lbl of allLabels) {
+          const text = lbl.textContent?.trim() || '';
+          if (optionLabels.includes(text)) continue;
+          if (text.length > 5 && text.length < 500) {
+            groupLabel = text;
+            break;
+          }
+        }
+      }
+      if (!groupLabel) groupLabel = name;
+    } catch {
+      groupLabel = name;
+    }
+
+    log(`📝 Checkbox: "${groupLabel}" [options: ${optionLabels.join(', ')}]`);
+
+    // Ask Claude — instruct to return multiple answers separated by |
+    const multiQuestion = `${groupLabel}\n\n(MULTI-SELECT: You may choose one or more options. Separate multiple choices with | character. Pick ALL correct/best answers.)`;
+    const answer = await askClaude(multiQuestion, optionLabels);
+
+    if (answer) {
+      // Parse multiple answers separated by |
+      const selectedAnswers = answer
+        .split('|')
+        .map((a) => a.trim())
+        .filter((a) => a.length > 0);
+
+      let matched = 0;
+      for (const sel of selectedAnswers) {
+        const lower = sel.toLowerCase();
+        const idx = optionLabels.findIndex(
+          (lbl) =>
+            lbl.toLowerCase() === lower ||
+            lbl.toLowerCase().includes(lower) ||
+            lower.includes(lbl.toLowerCase())
+        );
+        if (idx >= 0 && !groupCbs[idx].checked) {
+          groupCbs[idx].click();
+          matched++;
+          log(`✅ Checked: "${optionLabels[idx]}" for "${groupLabel}"`);
+          await waitMs(200);
+        }
+      }
+
+      // If Claude returned something but nothing matched, try first option
+      if (matched === 0) {
+        groupCbs[0].click();
+        log(`⚠️ No match for checkbox "${groupLabel}", checked first: "${optionLabels[0]}"`);
+      }
+    } else {
+      return { needsUserInput: true, fieldLabel: groupLabel };
+    }
+  }
+
   return { needsUserInput: false };
 }
 
@@ -953,9 +1202,9 @@ function detectPageErrors(): string[] {
   const seen = new Set<string>();
 
   // 1. Check all inputs/selects with aria-invalid="true" or validationMessage
-  const allInputs = document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(
-    'input, textarea, select'
-  );
+  const allInputs = document.querySelectorAll<
+    HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+  >('input, textarea, select');
   for (const inp of allInputs) {
     const hasAriaInvalid = inp.getAttribute('aria-invalid') === 'true';
     const hasValidationMsg = 'validationMessage' in inp && inp.validationMessage;
@@ -981,9 +1230,11 @@ function detectPageErrors(): string[] {
   // 2. Visible error elements on the page (role=alert, .error, etc.)
   const errorSelectors = [
     '[role="alert"]',
-    '.error', '.field-error', '.input-error',
+    '.error',
+    '.field-error',
+    '.input-error',
     '[class*="error" i]:not(script):not(style):not(input):not(select):not(textarea)',
-    '[data-testid*="error" i]',
+    '[data-testid*="error" i]'
   ];
   for (const sel of errorSelectors) {
     try {
@@ -996,7 +1247,9 @@ function detectPageErrors(): string[] {
           seen.add(text);
         }
       }
-    } catch { /* invalid selector */ }
+    } catch {
+      /* invalid selector */
+    }
   }
 
   return errors;
@@ -1027,10 +1280,11 @@ async function handlePostClickErrors(pageErrors: string[]): Promise<'fixed' | 'f
     const currentValue = inp.value;
 
     // Detect date fields and extract format from error message or page
-    const isDateField = constraints.type === 'date'
-      || !!constraints.placeholder?.match(/[DMY]{2,4}/i)
-      || !!domError.match(/[DMY]{2,4}/i)
-      || !!label.match(/\b(data|date|when|quando|início|start|término|end)\b/i);
+    const isDateField =
+      constraints.type === 'date' ||
+      !!constraints.placeholder?.match(/[DMY]{2,4}/i) ||
+      !!domError.match(/[DMY]{2,4}/i) ||
+      !!label.match(/\b(data|date|when|quando|início|start|término|end)\b/i);
 
     if (isDateField) {
       // Extract format from error message (e.g. "Insira as datas no formato DD/MM/YYYY")
@@ -1048,8 +1302,12 @@ async function handlePostClickErrors(pageErrors: string[]): Promise<'fixed' | 'f
     // Enrich label with format hints for retry
     let enrichedLabel = label;
     if (isDateField && constraints.placeholder) {
-      const example = constraints.placeholder === 'DD/MM/YYYY' ? '15/03/2024' :
-        constraints.placeholder === 'MM/DD/YYYY' ? '03/15/2024' : '2024-03-15';
+      const example =
+        constraints.placeholder === 'DD/MM/YYYY'
+          ? '15/03/2024'
+          : constraints.placeholder === 'MM/DD/YYYY'
+            ? '03/15/2024'
+            : '2024-03-15';
       enrichedLabel = `${label} (MUST answer in exact format: ${constraints.placeholder}, example: ${example})`;
     } else if (constraints.type === 'number') {
       enrichedLabel = `${label} (answer must be a number only)`;
@@ -1059,7 +1317,9 @@ async function handlePostClickErrors(pageErrors: string[]): Promise<'fixed' | 'f
 
     const errorContext = `After submitting the form, field "${enrichedLabel}" has error: "${domError}". Current value: "${currentValue}". Page errors: ${pageErrors.join('; ')}. Fix the answer.`;
 
-    log(`🔧 Fixing field "${label}" — error: "${domError}", current: "${currentValue}", isDate: ${isDateField}`);
+    log(
+      `🔧 Fixing field "${label}" — error: "${domError}", current: "${currentValue}", isDate: ${isDateField}`
+    );
 
     // For date fields: use today's date directly (AI keeps getting this wrong)
     if (isDateField) {
@@ -1067,7 +1327,9 @@ async function handlePostClickErrors(pageErrors: string[]): Promise<'fixed' | 'f
       const availableToday = storageData?.settings?.availableToday !== false;
       const dateFormat = constraints.placeholder || 'DD/MM/YYYY';
       const dateValue = getTodayFormatted(dateFormat);
-      log(`📅 Date field fix: using ${availableToday ? 'today' : 'today (fallback)'}: "${dateValue}"`);
+      log(
+        `📅 Date field fix: using ${availableToday ? 'today' : 'today (fallback)'}: "${dateValue}"`
+      );
       fillInput(inp, dateValue);
       anyFixed = true;
       await waitMs(300);
@@ -1130,19 +1392,21 @@ async function handlePostClickErrors(pageErrors: string[]): Promise<'fixed' | 'f
     log(`🔧 Fixing select "${label}" — aria-invalid or empty, ${optionTexts.length} options`);
 
     const answer = await askClaude(
-      label, optionTexts, undefined,
+      label,
+      optionTexts,
+      undefined,
       `This select field has error: "Escolha uma opção para continuar". Page errors: ${pageErrors.join('; ')}. Pick the correct option.`
     );
     if (answer) {
       let idx = optionTexts.indexOf(answer);
       if (idx < 0) {
         const lower = answer.toLowerCase().trim();
-        idx = optionTexts.findIndex(t => t.toLowerCase().trim() === lower);
+        idx = optionTexts.findIndex((t) => t.toLowerCase().trim() === lower);
       }
       if (idx < 0) {
         const lower = answer.toLowerCase().trim();
-        idx = optionTexts.findIndex(t =>
-          t.toLowerCase().trim().includes(lower) || lower.includes(t.toLowerCase().trim())
+        idx = optionTexts.findIndex(
+          (t) => t.toLowerCase().trim().includes(lower) || lower.includes(t.toLowerCase().trim())
         );
       }
       if (idx >= 0) {
@@ -1179,7 +1443,7 @@ async function handlePostClickErrors(pageErrors: string[]): Promise<'fixed' | 'f
  * Returns collected error messages, or empty array if no errors detected within timeout.
  */
 function waitForPostClickErrors(timeoutMs: number): Promise<string[]> {
-  return new Promise(resolve => {
+  return new Promise((resolve) => {
     const errors: string[] = [];
     const seen = new Set<string>();
     let resolved = false;
@@ -1204,7 +1468,9 @@ function waitForPostClickErrors(timeoutMs: number): Promise<string[]> {
         // Check parent for error elements
         const parent = el.closest('div, fieldset, li');
         if (parent) {
-          const errorEl = parent.querySelector('[role="alert"], .error, .field-error, [class*="error" i]');
+          const errorEl = parent.querySelector(
+            '[role="alert"], .error, .field-error, [class*="error" i]'
+          );
           const text = errorEl?.textContent?.trim();
           if (text && text.length > 2 && !seen.has(text)) {
             errors.push(text);
@@ -1212,7 +1478,11 @@ function waitForPostClickErrors(timeoutMs: number): Promise<string[]> {
           }
         }
         // Check native validation
-        if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) {
+        if (
+          el instanceof HTMLInputElement ||
+          el instanceof HTMLTextAreaElement ||
+          el instanceof HTMLSelectElement
+        ) {
           if (el.validationMessage && !seen.has(el.validationMessage)) {
             errors.push(el.validationMessage);
             seen.add(el.validationMessage);
@@ -1229,7 +1499,8 @@ function waitForPostClickErrors(timeoutMs: number): Promise<string[]> {
           const target = mutation.target as Element;
           if (target.getAttribute('aria-invalid') === 'true') {
             const label = getLabelForInput(target);
-            const errId = target.getAttribute('aria-errormessage') || target.getAttribute('aria-describedby');
+            const errId =
+              target.getAttribute('aria-errormessage') || target.getAttribute('aria-describedby');
             let errText = '';
             if (errId) {
               errText = document.getElementById(errId)?.textContent?.trim() || '';
@@ -1246,8 +1517,10 @@ function waitForPostClickErrors(timeoutMs: number): Promise<string[]> {
         if (mutation.type === 'childList') {
           for (const node of mutation.addedNodes) {
             if (!(node instanceof HTMLElement)) continue;
-            const isError = node.matches('[role="alert"], .error, .field-error, [class*="error" i], [data-testid*="error" i]')
-              || node.querySelector('[role="alert"], .error, .field-error');
+            const isError =
+              node.matches(
+                '[role="alert"], .error, .field-error, [class*="error" i], [data-testid*="error" i]'
+              ) || node.querySelector('[role="alert"], .error, .field-error');
             if (isError) {
               const text = node.textContent?.trim();
               if (text && text.length > 2 && text.length < 300 && !seen.has(text)) {
@@ -1265,7 +1538,7 @@ function waitForPostClickErrors(timeoutMs: number): Promise<string[]> {
       attributes: true,
       attributeFilter: ['aria-invalid'],
       childList: true,
-      subtree: true,
+      subtree: true
     });
 
     // Timeout: resolve with whatever errors we've collected
@@ -1278,16 +1551,22 @@ function waitForPostClickErrors(timeoutMs: number): Promise<string[]> {
 function clickContinueOrSubmit(): 'submitted' | 'continued' | 'none' {
   // Log all visible buttons for debugging
   const allBtns = findAll('button', document).filter(isVisible);
-  const btnTexts = allBtns.map(b => (b.textContent || '').trim().substring(0, 40));
+  const btnTexts = allBtns.map((b) => (b.textContent || '').trim().substring(0, 40));
   log(`Buttons on page: [${btnTexts.join(', ')}]`);
 
-  if (clickFirst(SUBMIT_SELECTORS)) { log('Clicked SUBMIT via selector'); return 'submitted'; }
-  if (clickFirst(CONTINUE_SELECTORS)) { log('Clicked CONTINUE via selector'); return 'continued'; }
+  if (clickFirst(SUBMIT_SELECTORS)) {
+    log('Clicked SUBMIT via selector');
+    return 'submitted';
+  }
+  if (clickFirst(CONTINUE_SELECTORS)) {
+    log('Clicked CONTINUE via selector');
+    return 'continued';
+  }
 
   for (const btn of allBtns) {
     const text = (btn.textContent || '').toLowerCase().trim();
-    if (SKIP_KEYWORDS.some(kw => text.includes(kw))) continue;
-    if (SUBMIT_KEYWORDS.some(kw => text.includes(kw))) {
+    if (SKIP_KEYWORDS.some((kw) => text.includes(kw))) continue;
+    if (SUBMIT_KEYWORDS.some((kw) => text.includes(kw))) {
       log(`Clicked SUBMIT button: "${text}"`);
       (btn as HTMLElement).click();
       return 'submitted';
@@ -1296,8 +1575,8 @@ function clickContinueOrSubmit(): 'submitted' | 'continued' | 'none' {
 
   for (const btn of allBtns) {
     const text = (btn.textContent || '').toLowerCase().trim();
-    if (SKIP_KEYWORDS.some(kw => text.includes(kw))) continue;
-    if (CONTINUE_KEYWORDS.some(kw => text.includes(kw))) {
+    if (SKIP_KEYWORDS.some((kw) => text.includes(kw))) continue;
+    if (CONTINUE_KEYWORDS.some((kw) => text.includes(kw))) {
       log(`Clicked CONTINUE button: "${text}"`);
       (btn as HTMLElement).click();
       return 'continued';
@@ -1306,7 +1585,7 @@ function clickContinueOrSubmit(): 'submitted' | 'continued' | 'none' {
 
   for (const btn of allBtns) {
     const text = (btn.textContent || '').toLowerCase().trim();
-    if (SKIP_KEYWORDS.some(kw => text.includes(kw))) continue;
+    if (SKIP_KEYWORDS.some((kw) => text.includes(kw))) continue;
     if (!text || text.length > 50) continue;
     if (isDisabled(btn)) continue;
     log(`Clicked FALLBACK button: "${text}"`);
@@ -1329,7 +1608,7 @@ function hasCoverLetterField(): boolean {
     '[class*="cover-letter"]',
     'input[type="file"][name*="cover" i]',
     'input[type="file"][aria-label*="cover" i]',
-    'input[type="file"][aria-label*="carta" i]',
+    'input[type="file"][aria-label*="carta" i]'
   ];
   for (const sel of selectors) {
     if (document.querySelector(sel)) return true;
@@ -1338,9 +1617,99 @@ function hasCoverLetterField(): boolean {
   const textEls = document.querySelectorAll('label, span, h3, button, a');
   for (const el of textEls) {
     const text = (el.textContent || '').toLowerCase();
-    if (keywords.some(kw => text.includes(kw))) return true;
+    if (keywords.some((kw) => text.includes(kw))) return true;
   }
   return false;
+}
+
+// ── Page Advance Detection ──
+// Watches for DOM changes after user clicks native continue/submit buttons.
+
+let pageAdvanceObserver: MutationObserver | null = null;
+
+function watchForPageAdvance(): void {
+  // Clean up previous observer if any
+  if (pageAdvanceObserver) {
+    pageAdvanceObserver.disconnect();
+    pageAdvanceObserver = null;
+  }
+
+  const urlBefore = window.location.href;
+  // Delay capturing the DOM baseline so that async React re-renders from
+  // CV upload / form fills have time to settle. Without this, the observer
+  // sees those re-renders as a "page advance" and triggers a loop.
+  const SETTLE_MS = 3000;
+  const setupTime = Date.now();
+  let domBaseline = 0; // captured after settling
+  let baselineCaptured = false;
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const checkPageChange = () => {
+    const urlAfter = window.location.href;
+    const urlChanged = urlAfter !== urlBefore;
+
+    // URL change is always reliable — detect immediately
+    if (urlChanged) {
+      if (pageAdvanceObserver) {
+        pageAdvanceObserver.disconnect();
+        pageAdvanceObserver = null;
+      }
+
+      const isSubmitted =
+        urlAfter.includes('confirmation') ||
+        urlAfter.includes('submitted') ||
+        urlAfter.includes('success') ||
+        urlAfter.includes('post-apply');
+
+      if (isSubmitted) {
+        log('Submission detected — notifying orchestrator');
+        chrome.runtime.sendMessage({ type: 'TAB_SUBMITTED' });
+      } else {
+        log('Page advanced (URL changed) — notifying orchestrator for next fill');
+        chrome.runtime.sendMessage({ type: 'STEP_ADVANCED' });
+      }
+      return;
+    }
+
+    // DOM-size change: only check after the settling period so we don't
+    // false-trigger on React re-renders from CV upload / form filling.
+    const elapsed = Date.now() - setupTime;
+    if (elapsed < SETTLE_MS) {
+      // Still settling — just update baseline, don't fire
+      return;
+    }
+
+    // Capture baseline once after settling
+    if (!baselineCaptured) {
+      domBaseline = document.body?.innerHTML?.length || 0;
+      baselineCaptured = true;
+      return;
+    }
+
+    const domSizeAfter = document.body?.innerHTML?.length || 0;
+    const domChanged = Math.abs(domSizeAfter - domBaseline) > 500;
+
+    if (!domChanged) return;
+
+    if (pageAdvanceObserver) {
+      pageAdvanceObserver.disconnect();
+      pageAdvanceObserver = null;
+    }
+
+    log('Page advanced (DOM changed) — notifying orchestrator for next fill');
+    chrome.runtime.sendMessage({ type: 'STEP_ADVANCED' });
+  };
+
+  pageAdvanceObserver = new MutationObserver(() => {
+    // Debounce: wait 800ms after last DOM mutation before checking
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(checkPageChange, 800);
+  });
+
+  pageAdvanceObserver.observe(document.body, {
+    childList: true,
+    subtree: true
+  });
 }
 
 // ── Message Listener ──
@@ -1348,7 +1717,8 @@ function hasCoverLetterField(): boolean {
 chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) => {
   switch (message.type) {
     case 'FILL_AND_ADVANCE': {
-      const { cvData, cvOnlyData, cvFilename, coverData, coverFilename, jobTitle, baseProfile } = message.payload || {};
+      const { cvData, cvOnlyData, cvFilename, coverData, coverFilename, jobTitle, baseProfile } =
+        message.payload || {};
       currentJobTitle = jobTitle || '';
       currentBaseProfile = baseProfile || '';
 
@@ -1361,7 +1731,9 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
 
       (async () => {
         try {
-          log(`FILL_AND_ADVANCE: url=${window.location.href.substring(0, 80)}, hasCv=${!!(cvBuffer && cvFilename)}, cvSize=${cvBuffer?.byteLength || 0}`);
+          log(
+            `FILL_AND_ADVANCE: url=${window.location.href.substring(0, 80)}, hasCv=${!!(cvBuffer && cvFilename)}, cvSize=${cvBuffer?.byteLength || 0}`
+          );
 
           // FIRST: Handle special pages (privacy-settings, consent, etc.)
           // Must run BEFORE resume upload — sub-pages like /privacy-settings
@@ -1383,17 +1755,19 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
             document.querySelector('[data-testid*="resume-selection-file"]') ||
             document.querySelector('[data-testid*="resume-display"]')
           );
-          const isResumeSelectionPage = hasResumeUploadUI && (
-            window.location.href.includes('resume-selection') ||
-            !!document.querySelector('[data-testid*="resume-selection"]')
-          );
+          const isResumeSelectionPage =
+            hasResumeUploadUI &&
+            (window.location.href.includes('resume-selection') ||
+              !!document.querySelector('[data-testid*="resume-selection"]'));
 
           // Decide which CV to upload:
           // - If cover letter field exists → use CV-only (cover goes separately)
           // - If no cover letter field → use CV+cover embedded
           const coverFieldExists = hasCoverLetterField();
-          const resumeBuffer = (coverFieldExists && cvOnlyBuffer) ? cvOnlyBuffer : cvBuffer;
-          log(`Page check: isResumePage=${isResumeSelectionPage}, hasResumeUI=${hasResumeUploadUI}, hasCvToUpload=${hasCvToUpload}, coverFieldExists=${coverFieldExists}, usingCvOnly=${coverFieldExists && !!cvOnlyBuffer}`);
+          const resumeBuffer = coverFieldExists && cvOnlyBuffer ? cvOnlyBuffer : cvBuffer;
+          log(
+            `Page check: isResumePage=${isResumeSelectionPage}, hasResumeUI=${hasResumeUploadUI}, hasCvToUpload=${hasCvToUpload}, coverFieldExists=${coverFieldExists}, usingCvOnly=${coverFieldExists && !!cvOnlyBuffer}`
+          );
 
           if (isResumeSelectionPage && hasCvToUpload) {
             log('On resume-selection page with CV data, uploading...');
@@ -1401,7 +1775,10 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
             log(`Upload result: ${uploadOk}`);
 
             if (!uploadOk) {
-              log('WARNING: CV upload failed on resume-selection page, continuing anyway with existing CV', 'warning');
+              log(
+                'WARNING: CV upload failed on resume-selection page, continuing anyway with existing CV',
+                'warning'
+              );
               // Don't block — fall through to click Continue with whatever CV is there
             }
           } else if (hasCvToUpload && hasResumeUploadUI) {
@@ -1420,79 +1797,32 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
             log(`Questionnaire needs input: ${result.fieldLabel}`, 'warning');
             sendResponse({
               type: 'STEP_RESULT',
-              payload: { action: 'needs_input', fieldLabel: result.fieldLabel },
+              payload: { action: 'needs_input', fieldLabel: result.fieldLabel }
             });
             return;
           }
 
           await waitMs(500);
 
-          // Snapshot DOM state before clicking to detect if page changed
-          const urlBefore = window.location.href;
-          const domSnapshotBefore = document.body?.innerHTML?.length || 0;
-
-          let navResult = clickContinueOrSubmit();
-          log(`Navigation result: ${navResult}`);
-
-          // DOM-based AI fallback: when no button found, ask AI to analyze the page
-          if (navResult === 'none') {
-            log('⚠️ No navigation button found, trying DOM-based AI fallback...', 'warning');
-            navResult = await askClaudeForDomAction();
-            log(`DOM fallback result: ${navResult}`);
+          // On review page, auto-navigate to additional-documents if available
+          const addedDocs = await handleAdditionalDocuments();
+          if (addedDocs) {
+            log('Navigating to additional-documents page');
+            sendResponse({ type: 'STEP_RESULT', payload: { action: 'continued' } });
+            return;
           }
 
-          // Post-click error detection using MutationObserver
-          // Watches for: aria-invalid changes, error element insertions, role=alert
-          if (navResult === 'continued' || navResult === 'submitted') {
-            const errorsDetected = await waitForPostClickErrors(1500);
-
-            if (errorsDetected.length > 0) {
-              log(`⚠️ Form errors detected after clicking: ${errorsDetected.join(' | ')}`, 'warning');
-
-              const fixResult = await handlePostClickErrors(errorsDetected);
-              if (fixResult === 'fixed') {
-                await waitMs(500);
-                navResult = clickContinueOrSubmit();
-                log(`Retry navigation after fix: ${navResult}`);
-
-                // Check again after retry
-                const retryErrors = await waitForPostClickErrors(1000);
-                if (retryErrors.length > 0) {
-                  log('⚠️ Still errors after retry, sending DOM to AI', 'warning');
-                  navResult = await askClaudeForDomAction();
-                }
-              } else {
-                log('⚠️ Could not fix form errors, sending DOM to AI', 'warning');
-                navResult = await askClaudeForDomAction();
-              }
-            } else {
-              // No errors detected by observer — also check if page didn't change at all
-              const urlAfter = window.location.href;
-              const domSnapshotAfter = document.body?.innerHTML?.length || 0;
-              const pageChanged = urlAfter !== urlBefore || Math.abs(domSnapshotAfter - domSnapshotBefore) > 200;
-
-              if (!pageChanged) {
-                // Page really didn't change — do a final scan
-                const pageErrors = detectPageErrors();
-                if (pageErrors.length > 0) {
-                  log(`⚠️ Form errors found in final scan: ${pageErrors.join(' | ')}`, 'warning');
-                  const fixResult = await handlePostClickErrors(pageErrors);
-                  if (fixResult === 'fixed') {
-                    await waitMs(500);
-                    navResult = clickContinueOrSubmit();
-                    log(`Retry navigation after final fix: ${navResult}`);
-                  }
-                }
-              }
-            }
-          }
-
-          sendResponse({ type: 'STEP_RESULT', payload: { action: navResult } });
+          // Human-review mode: fill only, don't click continue/submit.
+          // User reviews filled fields and clicks native Indeed buttons.
+          // We watch for page changes to notify the orchestrator.
+          log('Fields filled — waiting for user to review and click Continue/Submit');
+          watchForPageAdvance();
+          sendResponse({ type: 'STEP_RESULT', payload: { action: 'filled' } });
         } catch (err) {
           log(`FILL_AND_ADVANCE ERROR: ${err}`, 'error');
           sendResponse({
             type: 'STEP_RESULT',
-            payload: { action: 'needs_input', fieldLabel: `Internal error: ${err}` },
+            payload: { action: 'needs_input', fieldLabel: `Internal error: ${err}` }
           });
         }
       })();
@@ -1509,8 +1839,8 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
           ready: buttons.length > 0 || inputs.length > 0,
           buttons: buttons.length,
           inputs: inputs.length,
-          url: window.location.href,
-        },
+          url: window.location.href
+        }
       });
       break;
     }
@@ -1518,8 +1848,139 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
   return true;
 });
 
+// ── Floating Button ──
+
+import { FloatingButtonSettings, DEFAULT_SETTINGS } from '../types';
+
+async function injectFloatingButton(): Promise<void> {
+  const data = await chrome.storage.local.get('settings');
+  const fb: FloatingButtonSettings = {
+    ...DEFAULT_SETTINGS.floatingButton,
+    ...data.settings?.floatingButton
+  };
+  if (!fb.enabled) return;
+
+  // Prevent duplicate injection
+  if (document.getElementById('iaa-floating-container')) return;
+
+  const sizeMap = { small: '32px', medium: '42px', large: '54px' };
+  const fontMap = { small: '12px', medium: '14px', large: '16px' };
+  const btnH = sizeMap[fb.size];
+  const btnFont = fontMap[fb.size];
+
+  const posStyle: Record<string, string> = {};
+  if (fb.style === 'fixed' || fb.style === 'sticky') {
+    posStyle.position = fb.style;
+  } else {
+    posStyle.position = 'absolute';
+  }
+  if (fb.position.includes('top')) posStyle.top = '16px';
+  if (fb.position.includes('bottom')) posStyle.bottom = '16px';
+  if (fb.position.includes('left')) posStyle.left = '16px';
+  if (fb.position.includes('right')) posStyle.right = '16px';
+
+  const container = document.createElement('div');
+  container.id = 'iaa-floating-container';
+  Object.assign(container.style, {
+    ...posStyle,
+    zIndex: '2147483647',
+    display: 'flex',
+    flexDirection: fb.position.includes('right') ? 'row-reverse' : 'row',
+    gap: '8px',
+    opacity: String(fb.opacity),
+    transition: 'opacity 0.2s',
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+  });
+
+  container.addEventListener('mouseenter', () => {
+    container.style.opacity = '1';
+  });
+  container.addEventListener('mouseleave', () => {
+    container.style.opacity = String(fb.opacity);
+  });
+
+  // Shared button style factory
+  function makeBtn(label: string, bg: string, hoverBg: string): HTMLButtonElement {
+    const btn = document.createElement('button');
+    btn.textContent = label;
+    Object.assign(btn.style, {
+      height: btnH,
+      padding: '0 20px',
+      border: 'none',
+      borderRadius: '8px',
+      background: bg,
+      color: '#fff',
+      fontSize: btnFont,
+      fontWeight: '600',
+      cursor: 'pointer',
+      boxShadow: '0 2px 8px rgba(0,0,0,0.25)',
+      transition: 'background 0.15s, transform 0.1s',
+      whiteSpace: 'nowrap'
+    });
+    btn.addEventListener('mouseenter', () => {
+      btn.style.background = hoverBg;
+      btn.style.transform = 'scale(1.05)';
+    });
+    btn.addEventListener('mouseleave', () => {
+      btn.style.background = bg;
+      btn.style.transform = 'scale(1)';
+    });
+    btn.addEventListener('mousedown', () => {
+      btn.style.transform = 'scale(0.95)';
+    });
+    btn.addEventListener('mouseup', () => {
+      btn.style.transform = 'scale(1.05)';
+    });
+    return btn;
+  }
+
+  // "Next" button — clicks native Continue/Submit
+  const nextBtn = makeBtn('Next ▶', '#16213e', '#1a2a4a');
+  nextBtn.addEventListener('click', () => {
+    // Find and click the native Continue or Submit button
+    const allBtns = document.querySelectorAll('button, [role="button"], a.ia-continueButton');
+    for (const b of allBtns) {
+      const text = (b.textContent || '').toLowerCase().trim();
+      if (
+        CONTINUE_KEYWORDS.some((kw) => text.includes(kw)) ||
+        SUBMIT_KEYWORDS.some((kw) => text.includes(kw))
+      ) {
+        if (isDisabled(b)) continue;
+        log(`Floating: clicked "${text}"`);
+        (b as HTMLElement).click();
+        return;
+      }
+    }
+    log('Floating: no Continue/Submit button found', 'warning');
+  });
+  container.appendChild(nextBtn);
+
+  // "Skip" button — closes tab (signals orchestrator to move on)
+  if (fb.showSkip) {
+    const skipBtn = makeBtn('Skip ✕', '#6c757d', '#5a6268');
+    skipBtn.addEventListener('click', () => {
+      log('Floating: user clicked Skip');
+      chrome.runtime.sendMessage({ type: 'TAB_SUBMITTED' });
+    });
+    container.appendChild(skipBtn);
+  }
+
+  document.body.appendChild(container);
+
+  // Re-apply on settings change
+  chrome.storage.onChanged.addListener((changes) => {
+    if (changes.settings) {
+      const el = document.getElementById('iaa-floating-container');
+      if (el) el.remove();
+      injectFloatingButton();
+    }
+  });
+}
+
+injectFloatingButton();
+
 // Announce to service worker
 chrome.runtime.sendMessage({
   type: 'STATUS_UPDATE',
-  payload: { contentScript: 'smartapply', url: window.location.href },
+  payload: { contentScript: 'smartapply', url: window.location.href }
 });

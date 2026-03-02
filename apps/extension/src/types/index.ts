@@ -16,7 +16,7 @@ export interface ProfileSettings {
   email: string;
   phone: string;
   // Address (segmented)
-  street: string;       // Rua + número
+  street: string; // Rua + número
   neighborhood: string; // Bairro
   city: string;
   state: string;
@@ -28,11 +28,20 @@ export interface ProfileSettings {
   instagram: string;
   portfolio: string;
   // Personal data for Brazilian job applications
-  birthDate: string;    // DD/MM/YYYY
+  birthDate: string; // DD/MM/YYYY
   rg: string;
   cpf: string;
   motherName: string;
   fatherName: string;
+}
+
+export interface FloatingButtonSettings {
+  enabled: boolean;
+  position: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+  style: 'fixed' | 'absolute' | 'sticky';
+  size: 'small' | 'medium' | 'large';
+  opacity: number; // 0.1 - 1.0
+  showSkip: boolean; // Show a "Skip" button alongside "Next"
 }
 
 export interface Settings {
@@ -41,6 +50,8 @@ export interface Settings {
   searchUrls: string[];
   maxApplies: number; // 0 = unlimited
   availableToday: boolean; // When true, date fields asking "when can you start" → today's date
+  concurrentTabs: number; // 1-5, number of simultaneous application tabs
+  floatingButton: FloatingButtonSettings;
   personalization: {
     enabled: boolean;
     baseCv: string; // markdown content
@@ -56,12 +67,24 @@ export const DEFAULT_SETTINGS: Settings = {
   searchUrls: [],
   maxApplies: 0,
   availableToday: true,
+  concurrentTabs: 1,
+  floatingButton: {
+    enabled: true,
+    position: 'bottom-right',
+    style: 'fixed',
+    size: 'medium',
+    opacity: 0.9,
+    showSkip: true
+  },
   personalization: {
     enabled: true,
     baseCv: '',
     baseCoverLetter: '',
     baseProfile: `# Dados Pessoais
 - Nome completo:
+- Empresa atual:
+- Cargo atual:
+- Período de aviso prévio:
 - Email:
 - Telefone:
 - Data de nascimento (DD/MM/YYYY):
@@ -127,7 +150,7 @@ export const DEFAULT_SETTINGS: Settings = {
 # Conhecimentos Técnicos (regras para a IA)
 - Responder positivamente sobre qualquer tecnologia mencionada
 - Anos de experiência por tecnologia específica:
-- Sempre dizer que já trabalhou com a ferramenta/framework mencionado`,
+- Sempre dizer que já trabalhou com a ferramenta/framework mencionado`
   },
   profile: {
     name: '',
@@ -147,8 +170,8 @@ export const DEFAULT_SETTINGS: Settings = {
     rg: '',
     cpf: '',
     motherName: '',
-    fatherName: '',
-  },
+    fatherName: ''
+  }
 };
 
 // ── Messages (service worker <-> content scripts) ──
@@ -168,6 +191,8 @@ export type MessageType =
   | 'STATUS_UPDATE'
   | 'GET_NEXT_PAGE'
   | 'NEXT_PAGE'
+  | 'GET_TOTAL_COUNT'
+  | 'TOTAL_COUNT'
   | 'GET_STATE'
   | 'SET_STATE'
   | 'START_BOT'
@@ -175,7 +200,9 @@ export type MessageType =
   | 'PAUSE_BOT'
   | 'RESUME_BOT'
   | 'ADD_LOG'
-  | 'SCRAPE_LINKEDIN';
+  | 'SCRAPE_LINKEDIN'
+  | 'STEP_ADVANCED'
+  | 'TAB_SUBMITTED';
 
 export interface Message {
   type: MessageType;
@@ -211,6 +238,19 @@ export interface BotStatus {
   currentSearchUrl?: string;
   currentSearchIndex?: number;
   totalSearchUrls?: number;
+  // Collection progress
+  currentPage?: number;
+  totalPages?: number;
+  estimatedTotalJobs?: number;
+  // Collection stats (breakdown of why jobs were skipped during scraping)
+  collectionStats?: {
+    externalApply: number;
+    duplicates: number;
+    alreadyKnown: number;
+  };
+  // Worker pool
+  activeWorkers?: number;
+  concurrentTabs?: number;
   log: LogEntry[];
 }
 

@@ -4,7 +4,17 @@
  */
 
 import { Message, Settings, DEFAULT_SETTINGS } from '../types';
-import { startBot, stopBot, pauseBot, resumeBot, getStatus, addLog, getCache } from './orchestrator';
+import {
+  startBot,
+  stopBot,
+  pauseBot,
+  resumeBot,
+  getStatus,
+  addLog,
+  getCache,
+  onStepAdvanced,
+  onTabSubmitted
+} from './orchestrator';
 import { askClaudeForAnswer } from '../services/claude';
 import { setupNotificationListeners } from '../utils/notifications';
 
@@ -20,7 +30,7 @@ async function getSettings(): Promise<Settings> {
     ...DEFAULT_SETTINGS,
     ...s,
     personalization: { ...DEFAULT_SETTINGS.personalization, ...s.personalization },
-    profile: { ...DEFAULT_SETTINGS.profile, ...s.profile },
+    profile: { ...DEFAULT_SETTINGS.profile, ...s.profile }
   };
 }
 
@@ -68,7 +78,19 @@ async function handleMessage(
       break;
 
     case 'ASK_CLAUDE': {
-      const { question, options, jobTitle, baseProfile, cacheOnly, storeCache, label, inputType, answer, constraints, errorContext } = message.payload || {};
+      const {
+        question,
+        options,
+        jobTitle,
+        baseProfile,
+        cacheOnly,
+        storeCache,
+        label,
+        inputType,
+        answer,
+        constraints,
+        errorContext
+      } = message.payload || {};
 
       // Cache store request
       if (storeCache) {
@@ -104,8 +126,13 @@ async function handleMessage(
 
         const profileContext = baseProfile || settings.personalization?.baseProfile || '';
         const claudeAnswer = await askClaudeForAnswer(
-          question, options, jobTitle || '', settings.backendUrl, profileContext,
-          constraints, errorContext
+          question,
+          options,
+          jobTitle || '',
+          settings.backendUrl,
+          profileContext,
+          constraints,
+          errorContext
         );
 
         if (claudeAnswer) {
@@ -143,7 +170,7 @@ async function handleMessage(
         // Open LinkedIn profile in a new tab
         const tab = await chrome.tabs.create({
           url: `https://www.linkedin.com/in/${slug}/`,
-          active: false,
+          active: false
         });
         tabId = tab.id;
 
@@ -171,29 +198,42 @@ async function handleMessage(
 
             // ── Name & headline ──
             const name = txt(document.querySelector('h1'));
-            const headline = txt(document.querySelector('.text-body-medium.break-words'))
-              || txt(document.querySelector('[data-generated-suggestion-target]'));
+            const headline =
+              txt(document.querySelector('.text-body-medium.break-words')) ||
+              txt(document.querySelector('[data-generated-suggestion-target]'));
 
             // ── Location ──
-            const location = txt(document.querySelector('.text-body-small.inline.t-black--light.break-words'))
-              || txt(document.querySelector('[class*="top-card"] [class*="location"]'));
+            const location =
+              txt(document.querySelector('.text-body-small.inline.t-black--light.break-words')) ||
+              txt(document.querySelector('[class*="top-card"] [class*="location"]'));
 
             // ── About ──
             const aboutSection = document.querySelector('#about')?.closest('section');
             const about = aboutSection
-              ? txt(aboutSection.querySelector('.display-flex .inline-show-more-text, [class*="full-width"] span[aria-hidden="true"]'))
+              ? txt(
+                  aboutSection.querySelector(
+                    '.display-flex .inline-show-more-text, [class*="full-width"] span[aria-hidden="true"]'
+                  )
+                )
               : '';
 
             // ── Experience ──
             const experienceSection = document.querySelector('#experience')?.closest('section');
-            const experience: { title: string; company: string; dates: string; description: string }[] = [];
+            const experience: {
+              title: string;
+              company: string;
+              dates: string;
+              description: string;
+            }[] = [];
             if (experienceSection) {
               experienceSection.querySelectorAll(':scope > div > ul > li').forEach((li) => {
                 const spans = li.querySelectorAll('span[aria-hidden="true"]');
                 const title = txt(spans[0]);
                 const company = txt(spans[1]);
                 const dates = txt(spans[2]);
-                const desc = txt(li.querySelector('.inline-show-more-text span[aria-hidden="true"]'));
+                const desc = txt(
+                  li.querySelector('.inline-show-more-text span[aria-hidden="true"]')
+                );
                 if (title) experience.push({ title, company, dates, description: desc });
               });
             }
@@ -215,10 +255,12 @@ async function handleMessage(
             const skillsSection = document.querySelector('#skills')?.closest('section');
             const skills: string[] = [];
             if (skillsSection) {
-              skillsSection.querySelectorAll(':scope > div > ul > li span[aria-hidden="true"]').forEach((el) => {
-                const s = txt(el);
-                if (s && !skills.includes(s)) skills.push(s);
-              });
+              skillsSection
+                .querySelectorAll(':scope > div > ul > li span[aria-hidden="true"]')
+                .forEach((el) => {
+                  const s = txt(el);
+                  if (s && !skills.includes(s)) skills.push(s);
+                });
             }
 
             // ── Languages ──
@@ -234,7 +276,9 @@ async function handleMessage(
             }
 
             // ── Certifications ──
-            const certsSection = document.querySelector('#licenses_and_certifications')?.closest('section');
+            const certsSection = document
+              .querySelector('#licenses_and_certifications')
+              ?.closest('section');
             const certifications: { name: string; issuer: string; date: string }[] = [];
             if (certsSection) {
               certsSection.querySelectorAll(':scope > div > ul > li').forEach((li) => {
@@ -250,7 +294,11 @@ async function handleMessage(
             const contactLinks: string[] = [];
             document.querySelectorAll('a[href]').forEach((a) => {
               const href = (a as HTMLAnchorElement).href;
-              if (href.includes('github.com') || href.includes('portfolio') || href.includes('instagram.com')) {
+              if (
+                href.includes('github.com') ||
+                href.includes('portfolio') ||
+                href.includes('instagram.com')
+              ) {
                 if (!contactLinks.includes(href)) contactLinks.push(href);
               }
             });
@@ -259,20 +307,34 @@ async function handleMessage(
             let jsonLd: any = null;
             const ldEl = document.querySelector('script[type="application/ld+json"]');
             if (ldEl) {
-              try { jsonLd = JSON.parse(ldEl.textContent || '{}'); } catch { /* ignore */ }
+              try {
+                jsonLd = JSON.parse(ldEl.textContent || '{}');
+              } catch {
+                /* ignore */
+              }
             }
 
             return {
-              name, headline, location, about,
-              experience, education, skills, languages, certifications,
-              contactLinks, jsonLd,
+              name,
+              headline,
+              location,
+              about,
+              experience,
+              education,
+              skills,
+              languages,
+              certifications,
+              contactLinks,
+              jsonLd
             };
-          },
+          }
         });
 
         const result = results?.[0]?.result;
         if (!result || (!result.name && !result.jsonLd)) {
-          sendResponse({ error: 'Could not extract profile data. Make sure you are logged into LinkedIn.' });
+          sendResponse({
+            error: 'Could not extract profile data. Make sure you are logged into LinkedIn.'
+          });
           return;
         }
 
@@ -286,7 +348,7 @@ async function handleMessage(
           education: result.education || [],
           skills: result.skills || [],
           languages: result.languages || [],
-          certifications: result.certifications || [],
+          certifications: result.certifications || []
         };
 
         // Parse location
@@ -326,8 +388,11 @@ async function handleMessage(
 
         for (const link of links) {
           if (link.includes('github.com') && !profileData.github) profileData.github = link;
-          else if (link.includes('instagram.com') && !profileData.instagram) profileData.instagram = link;
-          else if (!link.includes('linkedin.com') && !profileData.portfolio) profileData.portfolio = link;
+          else if (link.includes('instagram.com') && !profileData.instagram) {
+            profileData.instagram = link;
+          } else if (!link.includes('linkedin.com') && !profileData.portfolio) {
+            profileData.portfolio = link;
+          }
         }
 
         sendResponse({ payload: profileData });
@@ -335,9 +400,27 @@ async function handleMessage(
         sendResponse({ error: err.message || 'Failed to scrape LinkedIn' });
       } finally {
         if (tabId) {
-          try { await chrome.tabs.remove(tabId); } catch { /* tab may already be closed */ }
+          try {
+            await chrome.tabs.remove(tabId);
+          } catch {
+            /* tab may already be closed */
+          }
         }
       }
+      break;
+    }
+
+    case 'STEP_ADVANCED': {
+      const tabId = sender.tab?.id;
+      if (tabId) onStepAdvanced(tabId);
+      sendResponse({ ok: true });
+      break;
+    }
+
+    case 'TAB_SUBMITTED': {
+      const submittedTabId = sender.tab?.id;
+      if (submittedTabId) onTabSubmitted(submittedTabId);
+      sendResponse({ ok: true });
       break;
     }
 

@@ -48,7 +48,7 @@ function parseAndQuery(root: Element | Document, selector: string): Element[] {
   // Filter by :has-text()
   if (hasTextMatch) {
     const searchText = hasTextMatch[1].toLowerCase();
-    elements = elements.filter(el => (el.textContent || '').toLowerCase().includes(searchText));
+    elements = elements.filter((el) => (el.textContent || '').toLowerCase().includes(searchText));
   }
 
   // Filter by :visible
@@ -76,18 +76,12 @@ export function findFirst(
 }
 
 /** Return all matches for a selector. */
-export function findAll(
-  selector: string,
-  root: Element | Document = document
-): Element[] {
+export function findAll(selector: string, root: Element | Document = document): Element[] {
   return parseAndQuery(root, selector);
 }
 
 /** Find first element using selectors and click it. Returns true if clicked. */
-export function clickFirst(
-  selectors: string[],
-  root: Element | Document = document
-): boolean {
+export function clickFirst(selectors: string[], root: Element | Document = document): boolean {
   const el = findFirst(selectors, root);
   if (!el || !(el instanceof HTMLElement)) return false;
   try {
@@ -105,7 +99,7 @@ export function waitForSelector(
   timeoutMs: number = 10000,
   intervalMs: number = 300
 ): Promise<Element | null> {
-  return new Promise(resolve => {
+  return new Promise((resolve) => {
     const deadline = Date.now() + timeoutMs;
     const check = () => {
       const matches = parseAndQuery(root, selector);
@@ -138,9 +132,7 @@ export function fillInput(el: HTMLInputElement | HTMLTextAreaElement, value: str
 /** Select an option in a <select> element by value, with React compatibility. */
 export function selectOption(sel: HTMLSelectElement, value: string): void {
   // Use native setter to bypass React controlled components
-  const nativeSetter = Object.getOwnPropertyDescriptor(
-    HTMLSelectElement.prototype, 'value'
-  )?.set;
+  const nativeSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set;
 
   if (nativeSetter) {
     nativeSetter.call(sel, value);
@@ -189,7 +181,8 @@ export function setInputFiles(input: HTMLInputElement, file: File): void {
   dt.items.add(file);
 
   const nativeFilesSetter = Object.getOwnPropertyDescriptor(
-    HTMLInputElement.prototype, 'files'
+    HTMLInputElement.prototype,
+    'files'
   )?.set;
 
   if (nativeFilesSetter) {
@@ -214,13 +207,16 @@ export function setInputFiles(input: HTMLInputElement, file: File): void {
   const reader = new FileReader();
   reader.onload = () => {
     const base64 = (reader.result as string).split(',')[1] || '';
-    window.postMessage({
-      type: 'smartapply-set-files',
-      selector,
-      fileName: file.name,
-      fileType: file.type,
-      fileDataBase64: base64,
-    }, '*');
+    window.postMessage(
+      {
+        type: 'smartapply-set-files',
+        selector,
+        fileName: file.name,
+        fileType: file.type,
+        fileDataBase64: base64
+      },
+      '*'
+    );
   };
   reader.readAsDataURL(file);
 }
@@ -230,33 +226,47 @@ export function setInputFiles(input: HTMLInputElement, file: File): void {
  * @param expectedFilename - If provided, checks that the new filename matches (not just any file present)
  * @param timeoutMs - How long to poll for changes
  */
-export async function verifyUploadAccepted(timeoutMs = 3000, expectedFilename?: string): Promise<boolean> {
+export async function verifyUploadAccepted(
+  timeoutMs = 3000,
+  expectedFilename?: string
+): Promise<boolean> {
   // Snapshot the current label BEFORE waiting, so we can detect a change.
   // The label is the source of truth — NOT input.files, which can be set on the DOM
   // without React actually processing the change (false positive when input is hidden).
-  const labelBefore = document.querySelector(
-    '[data-testid="resume-selection-file-resume-upload-radio-card-label"], [data-testid="resume-selection-file-resume-radio-card-label"]'
-  )?.textContent?.trim() || '';
+  const labelBefore =
+    document
+      .querySelector(
+        '[data-testid="resume-selection-file-resume-upload-radio-card-label"], [data-testid="resume-selection-file-resume-radio-card-label"]'
+      )
+      ?.textContent?.trim() || '';
 
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     // Primary check: Indeed resume-selection label shows the new filename.
     // This is the only reliable indicator that React actually processed the upload.
-    const resumeLabel = document.querySelector(
-      '[data-testid="resume-selection-file-resume-upload-radio-card-label"], [data-testid="resume-selection-file-resume-radio-card-label"]'
-    )?.textContent?.trim() || '';
+    const resumeLabel =
+      document
+        .querySelector(
+          '[data-testid="resume-selection-file-resume-upload-radio-card-label"], [data-testid="resume-selection-file-resume-radio-card-label"]'
+        )
+        ?.textContent?.trim() || '';
     if (expectedFilename && resumeLabel.includes(expectedFilename.replace('.pdf', ''))) return true;
     if (!expectedFilename && resumeLabel !== labelBefore && resumeLabel.length > 0) return true;
 
     // Secondary check: "Carregado agora" / "Uploaded just now" text appeared
     // (indicates a fresh upload was processed by React)
     const bodyText = document.body?.innerText || '';
-    if (expectedFilename && bodyText.includes(expectedFilename.replace('.pdf', ''))
-        && (bodyText.includes('Carregado agora') || bodyText.includes('Uploaded just now') || bodyText.includes('just now'))) {
+    if (
+      expectedFilename &&
+      bodyText.includes(expectedFilename.replace('.pdf', '')) &&
+      (bodyText.includes('Carregado agora') ||
+        bodyText.includes('Uploaded just now') ||
+        bodyText.includes('just now'))
+    ) {
       return true;
     }
 
-    await new Promise(r => setTimeout(r, 300));
+    await new Promise((r) => setTimeout(r, 300));
   }
   return false;
 }
@@ -279,21 +289,22 @@ export interface InputConstraints {
 export function getInputConstraints(el: HTMLInputElement | HTMLTextAreaElement): InputConstraints {
   const constraints: InputConstraints = {
     type: (el as HTMLInputElement).type || 'text',
-    required: el.required || el.getAttribute('aria-required') === 'true',
+    required: el.required || el.getAttribute('aria-required') === 'true'
   };
 
   // Extract placeholder (useful for format hints like DD/MM/YYYY)
   // Check multiple sources: HTML attribute, aria-placeholder, and nearby hint text
-  let placeholder = el.getAttribute('placeholder')?.trim()
-    || el.getAttribute('aria-placeholder')?.trim()
-    || '';
+  let placeholder =
+    el.getAttribute('placeholder')?.trim() || el.getAttribute('aria-placeholder')?.trim() || '';
 
   // If no placeholder, look for format hints in nearby DOM elements
   if (!placeholder) {
     const parent = el.closest('div, fieldset, li');
     if (parent) {
       // Look for hint/helper text near the input (common in React form libraries)
-      const hintEl = parent.querySelector('[class*="hint" i], [class*="helper" i], [class*="description" i], [id*="hint" i], small');
+      const hintEl = parent.querySelector(
+        '[class*="hint" i], [class*="helper" i], [class*="description" i], [id*="hint" i], small'
+      );
       const hintText = hintEl?.textContent?.trim() || '';
       if (hintText && hintText.match(/[DMY]{2,4}/i)) {
         placeholder = hintText;
@@ -304,15 +315,22 @@ export function getInputConstraints(el: HTMLInputElement | HTMLTextAreaElement):
   // Detect date-like input from various signals
   if (!placeholder) {
     const ariaLabel = el.getAttribute('aria-label')?.trim() || '';
-    const label = el.getAttribute('id') ? document.querySelector(`label[for="${el.getAttribute('id')}"]`)?.textContent?.trim() || '' : '';
+    const label = el.getAttribute('id')
+      ? document.querySelector(`label[for="${el.getAttribute('id')}"]`)?.textContent?.trim() || ''
+      : '';
     const combinedText = `${ariaLabel} ${label}`.toLowerCase();
     // If label/aria contains date-related keywords and type is text, mark as date
-    if (constraints.type === 'text' && (
-      combinedText.includes('data') || combinedText.includes('date') ||
-      combinedText.includes('quando') || combinedText.includes('when') ||
-      combinedText.includes('início') || combinedText.includes('start') ||
-      combinedText.includes('término') || combinedText.includes('end')
-    )) {
+    if (
+      constraints.type === 'text' &&
+      (combinedText.includes('data') ||
+        combinedText.includes('date') ||
+        combinedText.includes('quando') ||
+        combinedText.includes('when') ||
+        combinedText.includes('início') ||
+        combinedText.includes('start') ||
+        combinedText.includes('término') ||
+        combinedText.includes('end'))
+    ) {
       // Check if there's a date format hint in the error message or nearby text
       const parentBlock = el.closest('[data-testid]') || el.closest('div');
       const allText = parentBlock?.textContent || '';
@@ -402,14 +420,18 @@ export function validateAnswer(
       if (!new RegExp(constraints.pattern).test(answer)) {
         return { valid: false, error: `Value doesn't match pattern: ${constraints.pattern}` };
       }
-    } catch { /* invalid regex, skip */ }
+    } catch {
+      /* invalid regex, skip */
+    }
   }
 
   return { valid: true };
 }
 
 /** Detect validation errors on an element after filling it. */
-export function detectValidationError(el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement): string | null {
+export function detectValidationError(
+  el: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+): string | null {
   // Native browser validation
   if ('validationMessage' in el && el.validationMessage) return el.validationMessage;
 
@@ -431,7 +453,9 @@ export function detectValidationError(el: HTMLInputElement | HTMLTextAreaElement
     for (let i = 0; i < 3 && parent; i++) {
       parent = parent.parentElement;
       if (!parent) break;
-      const errorEl = parent.querySelector('[role="alert"], .error, .field-error, .input-error, [class*="error" i], [data-testid*="error" i]');
+      const errorEl = parent.querySelector(
+        '[role="alert"], .error, .field-error, .input-error, [class*="error" i], [data-testid*="error" i]'
+      );
       if (errorEl) {
         const text = errorEl.textContent?.trim();
         if (text && text.length > 2) return text;
@@ -444,7 +468,9 @@ export function detectValidationError(el: HTMLInputElement | HTMLTextAreaElement
   // Look for nearby error elements even without aria-invalid
   const parent = el.closest('div, fieldset, li');
   if (parent) {
-    const errorEl = parent.querySelector('[role="alert"], .error, .field-error, .input-error, [class*="error" i]');
+    const errorEl = parent.querySelector(
+      '[role="alert"], .error, .field-error, .input-error, [class*="error" i]'
+    );
     if (errorEl && isVisible(errorEl)) {
       const text = errorEl.textContent?.trim();
       if (text && text.length > 2) return text;

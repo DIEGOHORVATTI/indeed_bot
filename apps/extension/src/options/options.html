@@ -162,6 +162,13 @@
         <div class="hint">0 = unlimited</div>
       </div>
     </div>
+    <div class="row">
+      <div class="field">
+        <label for="concurrent-tabs">Concurrent Tabs</label>
+        <input type="number" id="concurrent-tabs" min="1" max="5" value="1">
+        <div class="hint">Number of simultaneous application tabs (1-5)</div>
+      </div>
+    </div>
     <div class="field">
       <div class="toggle">
         <input type="checkbox" id="available-today" checked>
@@ -229,6 +236,57 @@
       <div class="field">
         <label for="profile-portfolio">Portfolio</label>
         <input type="text" id="profile-portfolio">
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Floating Button</h2>
+    <div class="hint" style="margin-bottom: 12px">A floating "Next" button injected on SmartApply pages so you can advance the wizard without scrolling to the native button.</div>
+    <div class="field">
+      <div class="toggle">
+        <input type="checkbox" id="fb-enabled" checked>
+        <label for="fb-enabled">Enable floating button</label>
+      </div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label for="fb-position">Position</label>
+        <select id="fb-position">
+          <option value="top-left">Top Left</option>
+          <option value="top-right">Top Right</option>
+          <option value="bottom-left">Bottom Left</option>
+          <option value="bottom-right" selected>Bottom Right</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="fb-style">CSS Position</label>
+        <select id="fb-style">
+          <option value="fixed">Fixed (stays on screen)</option>
+          <option value="sticky">Sticky (scrolls then sticks)</option>
+          <option value="absolute">Absolute (relative to page)</option>
+        </select>
+      </div>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label for="fb-size">Button Size</label>
+        <select id="fb-size">
+          <option value="small">Small</option>
+          <option value="medium" selected>Medium</option>
+          <option value="large">Large</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="fb-opacity">Opacity</label>
+        <input type="number" id="fb-opacity" min="0.1" max="1" step="0.1" value="0.9">
+        <div class="hint">0.1 (transparent) — 1.0 (opaque)</div>
+      </div>
+    </div>
+    <div class="field">
+      <div class="toggle">
+        <input type="checkbox" id="fb-show-skip" checked>
+        <label for="fb-show-skip">Show "Skip" button alongside "Next"</label>
       </div>
     </div>
   </div>
