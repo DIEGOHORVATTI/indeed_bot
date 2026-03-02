@@ -1,6 +1,6 @@
 {
   "name": "indeed-auto-apply",
-  "version": "0.3.1",
+  "version": "0.3.4",
   "description": "Chrome extension for auto-applying to Indeed jobs",
   "private": true,
   "scripts": {

@@ -142,3 +142,24 @@ export async function generatePdfFromHtml(
 
   return response.arrayBuffer();
 }
+
+/**
+ * Try to fetch an existing PDF from the backend output/ folder.
+ * Returns the PDF ArrayBuffer if found, or null if not.
+ */
+export async function fetchExistingPdf(
+  backendUrl: string,
+  filename: string
+): Promise<ArrayBuffer | null> {
+  if (!backendUrl || !filename) return null;
+
+  try {
+    const response = await fetch(
+      `${backendUrl}/api/pdf/${encodeURIComponent(filename)}`
+    );
+    if (!response.ok) return null;
+    return response.arrayBuffer();
+  } catch {
+    return null;
+  }
+}

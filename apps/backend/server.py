@@ -282,6 +282,29 @@ async def generate_pdf(req: PdfRequest):
             os.unlink(tmp_path)
 
 
+@app.get("/api/pdf/{filename}")
+async def get_existing_pdf(filename: str):
+    """Return an existing PDF from output/ if it exists."""
+    safe_filename = re.sub(r'[^\w\s\-.]', '', os.path.basename(filename)) or ''
+    if not safe_filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    output_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "output")
+    file_path = os.path.join(output_dir, safe_filename)
+
+    if not os.path.isfile(file_path):
+        raise HTTPException(status_code=404, detail="PDF not found")
+
+    with open(file_path, "rb") as f:
+        pdf_bytes = f.read()
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{safe_filename}"'},
+    )
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok"}

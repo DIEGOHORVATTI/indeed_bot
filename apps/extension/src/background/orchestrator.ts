@@ -4,12 +4,34 @@
  * Supports concurrent tab workers for parallel applications.
  */
 
-import { BotState, BotStatus, JobEntry, LogEntry, Message, Settings } from '../types';
+import {
+  BotState,
+  BotStatus,
+  JobEntry,
+  LogEntry,
+  Message,
+  Settings
+} from '../types';
 import { JobRegistry } from '../services/job-registry';
 import { AnswerCache } from '../services/answer-cache';
-import { generateTailoredContent, generatePdfFromHtml } from '../services/claude';
-import { fillCvTemplate, fillCoverTemplate, fillCvWithCoverTemplate, loadTemplates } from '../services/pdf';
-import { createTabGroup, addTabToGroup, closeTab, navigateTab, waitForTabLoad } from './tab-group';
+import {
+  generateTailoredContent,
+  generatePdfFromHtml,
+  fetchExistingPdf
+} from '../services/claude';
+import {
+  fillCvTemplate,
+  fillCoverTemplate,
+  fillCvWithCoverTemplate,
+  loadTemplates
+} from '../services/pdf';
+import {
+  createTabGroup,
+  addTabToGroup,
+  closeTab,
+  navigateTab,
+  waitForTabLoad
+} from './tab-group';
 
 const registry = new JobRegistry();
 const cache = new AnswerCache();
@@ -47,9 +69,23 @@ let estimatedTotalJobs = 0;
 let tabWorkers: TabWorker[] = [];
 let collectionTabId: number | null = null;
 
+// PDF cache — reuse previously generated CVs by safeTitle key
+const pdfCache = new Map<
+  string,
+  {
+    cvPdfData: ArrayBuffer;
+    cvOnlyPdfData: ArrayBuffer;
+    coverPdfData: ArrayBuffer;
+    cvFilename: string;
+    coverFilename: string;
+  }
+>();
+
 // ── Logging ──
 
 export function addLog(level: LogEntry['level'], message: string): void {
+  const prefix = `[bot:${state}]`;
+  console.log(`${prefix} [${level}] ${message}`);
   log.push({ timestamp: Date.now(), level, message });
   if (log.length > 200) log = log.slice(-100);
   broadcastStatus();
@@ -57,12 +93,14 @@ export function addLog(level: LogEntry['level'], message: string): void {
 
 function broadcastStatus(): void {
   const status = getStatus();
-  chrome.runtime.sendMessage({ type: 'STATUS_UPDATE', payload: status }).catch(() => {});
+  chrome.runtime
+    .sendMessage({ type: 'STATUS_UPDATE', payload: status })
+    .catch(() => {});
 }
 
 export function getStatus(): BotStatus {
-  const pending = jobs.filter(j => j.status === 'pending').length;
-  const activeWorkers = tabWorkers.filter(w => w.state !== 'done').length;
+  const pending = jobs.filter((j) => j.status === 'pending').length;
+  const activeWorkers = tabWorkers.filter((w) => w.state !== 'done').length;
   return {
     state,
     appliedCount,
@@ -70,7 +108,9 @@ export function getStatus(): BotStatus {
     failedCount,
     pendingJobs: pending,
     totalJobs: jobs.length,
-    currentJob: tabWorkers.find(w => w.state !== 'done')?.job?.title || jobs[currentJobIndex]?.title,
+    currentJob:
+      tabWorkers.find((w) => w.state !== 'done')?.job?.title ||
+      jobs[currentJobIndex]?.title,
     currentSearchUrl,
     currentSearchIndex,
     totalSearchUrls,
@@ -79,21 +119,41 @@ export function getStatus(): BotStatus {
     estimatedTotalJobs,
     activeWorkers,
     concurrentTabs: settings?.concurrentTabs || 1,
-    log: log.slice(-50),
+    log: log.slice(-50)
   };
 }
 
 // ── Helpers ──
 
 function delay(ms: number): Promise<void> {
-  return new Promise(r => setTimeout(r, ms));
+  return new Promise((r) => setTimeout(r, ms));
 }
 
 function randomDelay(minMs: number, maxMs: number): Promise<void> {
   return delay(minMs + Math.random() * (maxMs - minMs));
 }
 
-async function sendToTab(tabId: number, message: Message, retries = 3): Promise<any> {
+function buildPageUrl(baseUrl: string, startOffset: number): string {
+  try {
+    const url = new URL(baseUrl);
+    if (startOffset > 0) {
+      url.searchParams.set('start', String(startOffset));
+    } else {
+      url.searchParams.delete('start');
+    }
+    return url.toString();
+  } catch {
+    // Fallback for malformed URLs
+    const separator = baseUrl.includes('?') ? '&' : '?';
+    return startOffset > 0 ? `${baseUrl}${separator}start=${startOffset}` : baseUrl;
+  }
+}
+
+async function sendToTab(
+  tabId: number,
+  message: Message,
+  retries = 3
+): Promise<any> {
   for (let i = 0; i < retries; i++) {
     const response = await new Promise<any>((resolve) => {
       chrome.tabs.sendMessage(tabId, message, (resp) => {
@@ -140,7 +200,10 @@ export async function startBot(userSettings: Settings): Promise<void> {
     addLog('error', `Bot error: ${err}`);
   } finally {
     state = 'idle';
-    addLog('info', `Bot finished. Applied: ${appliedCount}, Skipped: ${skippedCount}`);
+    addLog(
+      'info',
+      `Bot finished. Applied: ${appliedCount}, Skipped: ${skippedCount}`
+    );
     broadcastStatus();
   }
 }
@@ -187,46 +250,123 @@ async function collectAllJobs(): Promise<void> {
     currentSearchUrl = searchUrl;
     currentSearchIndex = searchIdx;
 
-    addLog('info', `[Link ${searchIdx + 1}/${totalSearchUrls}] Collecting from: ${searchUrl}`);
+    addLog(
+      'info',
+      `[Link ${searchIdx + 1}/${totalSearchUrls}] Collecting from: ${searchUrl}`
+    );
 
-    let pageUrl: string | null = searchUrl;
     let pageNum = 1;
     currentPage = 0;
     totalPages = 0;
     estimatedTotalJobs = 0;
     const batchStartIndex = jobs.length;
+    const JOBS_PER_PAGE = 10;
+    let consecutiveEmptyPages = 0;
+    let tabRetries = 0;
+    const MAX_TAB_RETRIES = 3;
 
-    while (pageUrl && !stopRequested) {
-      if (!collectionTabId) {
-        const { tabId } = await createTabGroup(pageUrl);
-        collectionTabId = tabId;
-      } else {
-        await navigateTab(collectionTabId, pageUrl);
+    while (!stopRequested) {
+      // Build page URL using &start= parameter (0-indexed: page1=0, page2=10, page3=20...)
+      const startOffset = (pageNum - 1) * JOBS_PER_PAGE;
+      const pageUrl = buildPageUrl(searchUrl, startOffset);
+
+      console.log(`[collect] Page ${pageNum} → ${pageUrl}`);
+
+      // Create or navigate the collection tab
+      try {
+        if (!collectionTabId) {
+          const { tabId } = await createTabGroup(pageUrl);
+          collectionTabId = tabId;
+          console.log(`[collect] Created new collection tab ${collectionTabId}`);
+        } else {
+          await navigateTab(collectionTabId, pageUrl);
+        }
+
+        await waitForTabLoad(collectionTabId, 15000);
+        await delay(2000);
+      } catch (err) {
+        console.warn(`[collect] Tab navigation failed on page ${pageNum}:`, err);
+        // Tab might have been closed — try to recreate
+        collectionTabId = null;
+        tabRetries++;
+        if (tabRetries > MAX_TAB_RETRIES) {
+          addLog('error', `Collection tab failed ${MAX_TAB_RETRIES} times, giving up on this search`);
+          break;
+        }
+        addLog('warning', `Collection tab lost, recreating (retry ${tabRetries}/${MAX_TAB_RETRIES})...`);
+        await delay(2000);
+        continue; // Retry same page with a new tab
       }
 
-      await waitForTabLoad(collectionTabId, 15000);
-      await delay(2000);
+      // Verify tab is still on Indeed (didn't redirect to error/404)
+      try {
+        const tab = await chrome.tabs.get(collectionTabId);
+        console.log(`[collect] Tab URL after load: ${tab.url}`);
+        if (!tab.url || !tab.url.includes('indeed.com')) {
+          addLog('warning', `Page ${pageNum} redirected to ${tab.url}, skipping`);
+          consecutiveEmptyPages++;
+          if (consecutiveEmptyPages >= 2) break;
+          pageNum++;
+          await randomDelay(2000, 4000);
+          continue;
+        }
+      } catch {
+        // Tab was closed externally — recreate it and retry same page
+        console.warn(`[collect] Tab ${collectionTabId} no longer exists, recreating`);
+        collectionTabId = null;
+        tabRetries++;
+        if (tabRetries > MAX_TAB_RETRIES) {
+          addLog('error', `Collection tab died ${MAX_TAB_RETRIES} times, giving up on this search`);
+          break;
+        }
+        addLog('warning', `Collection tab closed, recreating (retry ${tabRetries}/${MAX_TAB_RETRIES})...`);
+        await delay(2000);
+        continue; // Retry same page
+      }
 
+      // Tab survived — reset retry counter
+      tabRetries = 0;
       currentPage = pageNum;
       broadcastStatus();
 
       if (pageNum === 1) {
-        const countResp = await sendToTab(collectionTabId, { type: 'GET_TOTAL_COUNT' });
+        const countResp = await sendToTab(collectionTabId, {
+          type: 'GET_TOTAL_COUNT'
+        });
         if (countResp?.payload) {
           estimatedTotalJobs = countResp.payload.totalJobs || 0;
-          totalPages = countResp.payload.totalPages || 0;
-          addLog('info', `Found ~${estimatedTotalJobs} jobs across ${totalPages} page(s)`);
+          totalPages = estimatedTotalJobs > 0
+            ? Math.ceil(estimatedTotalJobs / JOBS_PER_PAGE)
+            : countResp.payload.totalPages || 0;
+          addLog(
+            'info',
+            `Found ~${estimatedTotalJobs} jobs across ~${totalPages} page(s)`
+          );
+          console.log(`[collect] Estimated: ${estimatedTotalJobs} jobs, ${totalPages} pages`);
           broadcastStatus();
         }
       }
 
-      const response = await sendToTab(collectionTabId, { type: 'COLLECT_LINKS' });
+      const response = await sendToTab(collectionTabId, {
+        type: 'COLLECT_LINKS'
+      });
       const links: { url: string; jobKey: string }[] = response?.payload || [];
 
+      console.log(`[collect] Page ${pageNum}: got ${links.length} links`);
+
       if (links.length === 0) {
-        addLog('info', `No more jobs on page ${pageNum}`);
-        break;
+        consecutiveEmptyPages++;
+        if (consecutiveEmptyPages >= 2) {
+          addLog('info', `No more jobs found after page ${pageNum}`);
+          break;
+        }
+        addLog('info', `Page ${pageNum} empty, trying next page...`);
+        pageNum++;
+        await randomDelay(2000, 4000);
+        continue;
       }
+
+      consecutiveEmptyPages = 0;
 
       const newLinks: { url: string; jobKey: string }[] = [];
       for (const link of links) {
@@ -241,21 +381,32 @@ async function collectAllJobs(): Promise<void> {
       const skipped = links.length - newLinks.length;
       const totalNew = jobs.length - batchStartIndex;
       const pageInfo = totalPages > 0 ? ` (page ${pageNum}/${totalPages})` : '';
-      const totalInfo = estimatedTotalJobs > 0 ? ` — ${totalNew}/${estimatedTotalJobs}` : ` — ${totalNew} total`;
-      addLog('info', `Page ${pageNum}${pageInfo}: +${newLinks.length} new${skipped ? ` (${skipped} known)` : ''}${totalInfo}`);
+      const totalInfo =
+        estimatedTotalJobs > 0
+          ? ` — ${totalNew}/${estimatedTotalJobs}`
+          : ` — ${totalNew} total`;
+      addLog(
+        'info',
+        `Page ${pageNum}${pageInfo}: +${newLinks.length} new${skipped ? ` (${skipped} known)` : ''}${totalInfo}`
+      );
+      console.log(`[collect] Page ${pageNum}: +${newLinks.length} new, ${skipped} known, ${totalNew} total collected`);
       broadcastStatus();
 
-      const nextPageResp = await sendToTab(collectionTabId, { type: 'GET_NEXT_PAGE' });
-      pageUrl = nextPageResp?.payload || null;
-
-      if (!pageUrl) {
-        addLog('info', `Collection done: ${totalNew} jobs from ${pageNum} page(s)`);
+      // Stop if we've collected all estimated jobs or exceeded total pages
+      if (totalPages > 0 && pageNum >= totalPages) {
+        addLog(
+          'info',
+          `Collection done: ${totalNew} jobs from ${pageNum} page(s)`
+        );
         break;
       }
 
       pageNum++;
       await randomDelay(2000, 4000);
     }
+
+    const totalCollected = jobs.length - batchStartIndex;
+    console.log(`[collect] Search URL #${searchIdx + 1} finished: ${totalCollected} jobs collected from ${pageNum} pages`);
   }
 
   // Close collection tab
@@ -269,22 +420,28 @@ async function collectAllJobs(): Promise<void> {
 
 async function collectAndApply(): Promise<void> {
   // Phase 1: Collect all jobs
+  console.log('[bot] === PHASE 1: COLLECTION START ===');
   await collectAllJobs();
+  console.log(`[bot] === PHASE 1: COLLECTION END — ${jobs.length} total jobs ===`);
 
-  const pendingJobs = jobs.filter(j => j.status === 'pending');
+  const pendingJobs = jobs.filter((j) => j.status === 'pending');
   if (pendingJobs.length === 0) {
     addLog('info', 'No jobs to apply');
     return;
   }
 
   // Phase 2: Launch concurrent workers
+  console.log(`[bot] === PHASE 2: APPLYING START — ${pendingJobs.length} pending jobs ===`);
   state = 'applying';
   broadcastStatus();
 
   const maxTabs = settings?.concurrentTabs || 1;
   const numWorkers = Math.min(maxTabs, pendingJobs.length);
 
-  addLog('info', `Starting ${numWorkers} concurrent tab(s) for ${pendingJobs.length} jobs`);
+  addLog(
+    'info',
+    `Starting ${numWorkers} concurrent tab(s) for ${pendingJobs.length} jobs`
+  );
 
   for (let i = 0; i < numWorkers; i++) {
     if (stopRequested) break;
@@ -294,8 +451,8 @@ async function collectAndApply(): Promise<void> {
 
   // Wait for all workers to finish (event-driven via onStepAdvanced / onTabSubmitted)
   while (!stopRequested) {
-    const activeWorkers = tabWorkers.filter(w => w.state !== 'done').length;
-    const hasPending = jobs.some(j => j.status === 'pending');
+    const activeWorkers = tabWorkers.filter((w) => w.state !== 'done').length;
+    const hasPending = jobs.some((j) => j.status === 'pending');
 
     if (activeWorkers === 0 && !hasPending) break;
     if (activeWorkers === 0 && hasPending) {
@@ -308,7 +465,7 @@ async function collectAndApply(): Promise<void> {
 }
 
 function getNextPendingJob(): JobEntry | null {
-  return jobs.find(j => j.status === 'pending') || null;
+  return jobs.find((j) => j.status === 'pending') || null;
 }
 
 async function launchNextWorker(): Promise<void> {
@@ -329,7 +486,7 @@ async function launchNextWorker(): Promise<void> {
   const worker: TabWorker = {
     tabId: -1,
     job,
-    state: 'navigating',
+    state: 'navigating'
   };
   tabWorkers.push(worker);
 
@@ -373,47 +530,113 @@ async function prepareAndFillJob(worker: TabWorker): Promise<void> {
   job.title = jobInfo.title;
   job.company = jobInfo.company;
 
-  addLog('info', `[Tab ${tabWorkers.indexOf(worker) + 1}] ${job.title} at ${job.company}`);
+  addLog(
+    'info',
+    `[Tab ${tabWorkers.indexOf(worker) + 1}] ${job.title} at ${job.company}`
+  );
   broadcastStatus();
 
-  // Generate tailored CV if enabled
+  // Generate tailored CV if enabled (with cache reuse)
   let cvPdfData: ArrayBuffer | undefined;
   let cvOnlyPdfData: ArrayBuffer | undefined;
   let cvFilename: string | undefined;
   let coverPdfData: ArrayBuffer | undefined;
   let coverFilename: string | undefined;
 
-  if (settings.personalization.enabled && settings.backendUrl && jobInfo.description) {
-    try {
-      addLog('info', `Generating tailored CV for: ${jobInfo.title}`);
-      const tailored = await generateTailoredContent(
-        jobInfo,
-        settings.personalization.baseCv,
-        settings.personalization.baseCoverLetter,
-        settings.backendUrl
-      );
+  if (
+    settings.personalization.enabled &&
+    settings.backendUrl &&
+    jobInfo.description
+  ) {
+    const safeTitle = (jobInfo.title || 'job')
+      .trim()
+      .replace(/\s+/g, '_')
+      .replace(/[^a-zA-Z0-9_\-]/g, '')
+      .substring(0, 60);
 
-      const safeTitle = (jobInfo.title || 'job')
-        .trim()
-        .replace(/\s+/g, '_')
-        .replace(/[^a-zA-Z0-9_\-]/g, '')
-        .substring(0, 60);
-
+    // Check in-memory cache first
+    const cached = pdfCache.get(safeTitle);
+    if (cached) {
+      addLog('info', `Reusing cached CVs for: ${jobInfo.title}`);
+      cvPdfData = cached.cvPdfData;
+      cvOnlyPdfData = cached.cvOnlyPdfData;
+      coverPdfData = cached.coverPdfData;
+      cvFilename = cached.cvFilename;
+      coverFilename = cached.coverFilename;
+    } else {
+      // Check if PDFs already exist on disk (output/ folder)
       cvFilename = `CV_${safeTitle}.pdf`;
-
-      const cvOnlyHtml = fillCvTemplate(tailored, settings.profile);
-      cvOnlyPdfData = await generatePdfFromHtml(cvOnlyHtml, settings.backendUrl, cvFilename);
-
-      const cvWithCoverHtml = fillCvWithCoverTemplate(tailored, settings.profile);
-      cvPdfData = await generatePdfFromHtml(cvWithCoverHtml, settings.backendUrl, `CV_Cover_${safeTitle}.pdf`);
-
-      const coverHtml = fillCoverTemplate(tailored, settings.profile);
       coverFilename = `Cover_${safeTitle}.pdf`;
-      coverPdfData = await generatePdfFromHtml(coverHtml, settings.backendUrl, coverFilename);
+      const cvCoverFilename = `CV_Cover_${safeTitle}.pdf`;
 
-      addLog('info', `CVs generated for: ${jobInfo.title}`);
-    } catch (err) {
-      addLog('error', `CV generation failed: ${err}`);
+      const [existingCv, existingCvCover, existingCover] = await Promise.all([
+        fetchExistingPdf(settings.backendUrl, cvFilename),
+        fetchExistingPdf(settings.backendUrl, cvCoverFilename),
+        fetchExistingPdf(settings.backendUrl, coverFilename)
+      ]);
+
+      if (existingCv && existingCvCover && existingCover) {
+        addLog('info', `Reusing existing PDFs from output/ for: ${jobInfo.title}`);
+        cvOnlyPdfData = existingCv;
+        cvPdfData = existingCvCover;
+        coverPdfData = existingCover;
+
+        // Store in memory cache too
+        pdfCache.set(safeTitle, {
+          cvPdfData,
+          cvOnlyPdfData,
+          coverPdfData,
+          cvFilename,
+          coverFilename
+        });
+      } else {
+        try {
+          addLog('info', `Generating tailored CV for: ${jobInfo.title}`);
+          const tailored = await generateTailoredContent(
+            jobInfo,
+            settings.personalization.baseCv,
+            settings.personalization.baseCoverLetter,
+            settings.backendUrl
+          );
+
+          const cvOnlyHtml = fillCvTemplate(tailored, settings.profile);
+          cvOnlyPdfData = await generatePdfFromHtml(
+            cvOnlyHtml,
+            settings.backendUrl,
+            cvFilename
+          );
+
+          const cvWithCoverHtml = fillCvWithCoverTemplate(
+            tailored,
+            settings.profile
+          );
+          cvPdfData = await generatePdfFromHtml(
+            cvWithCoverHtml,
+            settings.backendUrl,
+            `CV_Cover_${safeTitle}.pdf`
+          );
+
+          const coverHtml = fillCoverTemplate(tailored, settings.profile);
+          coverPdfData = await generatePdfFromHtml(
+            coverHtml,
+            settings.backendUrl,
+            coverFilename
+          );
+
+          addLog('info', `CVs generated for: ${jobInfo.title}`);
+
+          // Store in cache for reuse
+          pdfCache.set(safeTitle, {
+            cvPdfData,
+            cvOnlyPdfData,
+            coverPdfData,
+            cvFilename,
+            coverFilename
+          });
+        } catch (err) {
+          addLog('error', `CV generation failed: ${err}`);
+        }
+      }
     }
   }
 
@@ -456,7 +679,10 @@ async function prepareAndFillJob(worker: TabWorker): Promise<void> {
   }
 
   // Wait for wizard to load
-  addLog('info', `[Tab ${tabWorkers.indexOf(worker) + 1}] Waiting for wizard...`);
+  addLog(
+    'info',
+    `[Tab ${tabWorkers.indexOf(worker) + 1}] Waiting for wizard...`
+  );
   let wizardReady = false;
   for (let attempt = 0; attempt < 15; attempt++) {
     await delay(2000);
@@ -466,7 +692,9 @@ async function prepareAndFillJob(worker: TabWorker): Promise<void> {
         wizardReady = true;
         break;
       }
-    } catch { /* not injected yet */ }
+    } catch {
+      /* not injected yet */
+    }
   }
 
   if (!wizardReady) {
@@ -482,12 +710,16 @@ async function prepareAndFillJob(worker: TabWorker): Promise<void> {
   // Cache CV payload for re-sending on step advances
   worker.cvPayload = {
     cvData: cvPdfData ? Array.from(new Uint8Array(cvPdfData)) : undefined,
-    cvOnlyData: cvOnlyPdfData ? Array.from(new Uint8Array(cvOnlyPdfData)) : undefined,
+    cvOnlyData: cvOnlyPdfData
+      ? Array.from(new Uint8Array(cvOnlyPdfData))
+      : undefined,
     cvFilename,
-    coverData: coverPdfData ? Array.from(new Uint8Array(coverPdfData)) : undefined,
+    coverData: coverPdfData
+      ? Array.from(new Uint8Array(coverPdfData))
+      : undefined,
     coverFilename,
     jobTitle: job.title || '',
-    baseProfile: settings?.personalization?.baseProfile || '',
+    baseProfile: settings?.personalization?.baseProfile || ''
   };
 
   // Send first fill command
@@ -498,18 +730,27 @@ async function prepareAndFillJob(worker: TabWorker): Promise<void> {
 async function sendFillCommand(worker: TabWorker): Promise<void> {
   const stepResponse = await sendToTab(worker.tabId, {
     type: 'FILL_AND_ADVANCE',
-    payload: worker.cvPayload,
+    payload: worker.cvPayload
   });
 
   const action = stepResponse?.payload?.action;
-  addLog('info', `[Tab ${tabWorkers.indexOf(worker) + 1}] Fill result: ${action || 'no response'}`);
+  addLog(
+    'info',
+    `[Tab ${tabWorkers.indexOf(worker) + 1}] Fill result: ${action || 'no response'}`
+  );
 
   if (action === 'filled') {
     worker.state = 'waiting_review';
-    addLog('info', `[Tab ${tabWorkers.indexOf(worker) + 1}] Waiting for user review — ${worker.job.title}`);
+    addLog(
+      'info',
+      `[Tab ${tabWorkers.indexOf(worker) + 1}] Waiting for user review — ${worker.job.title}`
+    );
   } else if (action === 'needs_input') {
     worker.state = 'waiting_review';
-    addLog('warning', `[Tab ${tabWorkers.indexOf(worker) + 1}] Needs user input: ${stepResponse?.payload?.fieldLabel}`);
+    addLog(
+      'warning',
+      `[Tab ${tabWorkers.indexOf(worker) + 1}] Needs user input: ${stepResponse?.payload?.fieldLabel}`
+    );
   } else if (action === 'continued') {
     // Special pages auto-handled (privacy/consent) — fill next step
     await delay(1500);
@@ -519,12 +760,18 @@ async function sendFillCommand(worker: TabWorker): Promise<void> {
     await delay(3000);
     const retry = await sendToTab(worker.tabId, {
       type: 'FILL_AND_ADVANCE',
-      payload: worker.cvPayload,
+      payload: worker.cvPayload
     });
-    if (retry?.payload?.action === 'filled' || retry?.payload?.action === 'needs_input') {
+    if (
+      retry?.payload?.action === 'filled' ||
+      retry?.payload?.action === 'needs_input'
+    ) {
       worker.state = 'waiting_review';
     } else {
-      addLog('warning', `[Tab ${tabWorkers.indexOf(worker) + 1}] Could not fill page, waiting for user`);
+      addLog(
+        'warning',
+        `[Tab ${tabWorkers.indexOf(worker) + 1}] Could not fill page, waiting for user`
+      );
       worker.state = 'waiting_review';
     }
   }
@@ -535,10 +782,13 @@ async function sendFillCommand(worker: TabWorker): Promise<void> {
 // ── Event Handlers (called from background/index.ts) ──
 
 export async function onStepAdvanced(senderTabId: number): Promise<void> {
-  const worker = tabWorkers.find(w => w.tabId === senderTabId);
+  const worker = tabWorkers.find((w) => w.tabId === senderTabId);
   if (!worker || worker.state === 'done') return;
 
-  addLog('info', `[Tab ${tabWorkers.indexOf(worker) + 1}] User advanced — filling next step`);
+  addLog(
+    'info',
+    `[Tab ${tabWorkers.indexOf(worker) + 1}] User advanced — filling next step`
+  );
   worker.state = 'filling';
   broadcastStatus();
 
@@ -547,7 +797,7 @@ export async function onStepAdvanced(senderTabId: number): Promise<void> {
 }
 
 export async function onTabSubmitted(senderTabId: number): Promise<void> {
-  const worker = tabWorkers.find(w => w.tabId === senderTabId);
+  const worker = tabWorkers.find((w) => w.tabId === senderTabId);
   if (!worker || worker.state === 'done') return;
 
   const job = worker.job;
@@ -561,7 +811,7 @@ export async function onTabSubmitted(senderTabId: number): Promise<void> {
   broadcastStatus();
 
   // Launch next worker if there are pending jobs
-  if (!stopRequested && jobs.some(j => j.status === 'pending')) {
+  if (!stopRequested && jobs.some((j) => j.status === 'pending')) {
     await delay(1000);
     await launchNextWorker();
   }

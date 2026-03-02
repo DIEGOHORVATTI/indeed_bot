@@ -9,7 +9,7 @@ import { findFirst, findAll, clickFirst, isVisible } from '../utils/selectors';
 import {
   APPLY_BUTTON_SELECTORS,
   APPLY_HEURISTIC_KEYWORDS,
-  EXTERNAL_APPLY_KEYWORDS,
+  EXTERNAL_APPLY_KEYWORDS
 } from '../utils/i18n';
 
 // ── URL Validation ──
@@ -38,26 +38,38 @@ function collectIndeedApplyLinks(): { url: string; jobKey: string }[] {
   const links: { url: string; jobKey: string }[] = [];
   const cards = document.querySelectorAll('div[data-testid="slider_item"]');
 
+  console.log(`[indeed-cs] collectLinks: found ${cards.length} job cards on ${window.location.href}`);
+
+  let noApplyBtn = 0;
+  let noLink = 0;
+  let notIndeed = 0;
+  let noKey = 0;
+
   for (const card of cards) {
     const indeedApply = card.querySelector('[data-testid="indeedApply"]');
-    if (!indeedApply) continue;
+    if (!indeedApply) { noApplyBtn++; continue; }
 
-    const linkEl = card.querySelector('a.jcs-JobTitle') as HTMLAnchorElement | null;
-    if (!linkEl) continue;
+    const linkEl = card.querySelector(
+      'a.jcs-JobTitle'
+    ) as HTMLAnchorElement | null;
+    if (!linkEl) { noLink++; continue; }
 
     let jobUrl = linkEl.getAttribute('href') || '';
     if (jobUrl.startsWith('/')) {
       jobUrl = `${window.location.origin}${jobUrl}`;
     }
 
-    if (!isIndeedUrl(jobUrl)) continue;
+    if (!isIndeedUrl(jobUrl)) { notIndeed++; continue; }
 
     const jobKey = extractJobKey(jobUrl);
     if (jobKey) {
       links.push({ url: jobUrl, jobKey });
+    } else {
+      noKey++;
     }
   }
 
+  console.log(`[indeed-cs] collectLinks result: ${links.length} valid, skipped: ${noApplyBtn} no-apply, ${noLink} no-link, ${notIndeed} not-indeed, ${noKey} no-key`);
   return links;
 }
 
@@ -67,7 +79,7 @@ function isExternalApplyButton(btn: Element): boolean {
   const text = (btn.textContent || '').toLowerCase();
   const label = (btn.getAttribute('aria-label') || '').toLowerCase();
   const combined = `${text} ${label}`;
-  return EXTERNAL_APPLY_KEYWORDS.some(kw => combined.includes(kw));
+  return EXTERNAL_APPLY_KEYWORDS.some((kw) => combined.includes(kw));
 }
 
 // ── Apply Button ──
@@ -92,8 +104,13 @@ function findAndClickApply(): 'clicked' | 'external' | 'not_found' {
     if (isExternalApplyButton(btn)) continue;
     const label = (btn.getAttribute('aria-label') || '').toLowerCase();
     const text = (btn.textContent || '').toLowerCase();
-    if (['close', 'cancel', 'fermer', 'annuler', 'fechar'].some(x => label.includes(x))) continue;
-    if (APPLY_HEURISTIC_KEYWORDS.some(kw => text.includes(kw))) {
+    if (
+      ['close', 'cancel', 'fermer', 'annuler', 'fechar'].some((x) =>
+        label.includes(x)
+      )
+    )
+      continue;
+    if (APPLY_HEURISTIC_KEYWORDS.some((kw) => text.includes(kw))) {
       (btn as HTMLElement).click();
       return 'clicked';
     }
@@ -109,18 +126,18 @@ function scrapeJobDescription(): JobInfo {
     'h1.jobsearch-JobInfoHeader-title',
     'h1[data-testid="jobsearch-JobInfoHeader-title"]',
     'h1[class*="JobInfoHeader"]',
-    'h2.jobTitle',
+    'h2.jobTitle'
   ];
   const companySelectors = [
     '[data-testid="inlineHeader-companyName"]',
     '[data-testid="company-name"]',
     'div[data-company-name] a',
-    'span.css-1cjkto6',
+    'span.css-1cjkto6'
   ];
   const descSelectors = [
     '#jobDescriptionText',
     'div.jobsearch-JobComponent-description',
-    '[data-testid="jobDescriptionText"]',
+    '[data-testid="jobDescriptionText"]'
   ];
 
   function getText(selectors: string[]): string {
@@ -135,7 +152,7 @@ function scrapeJobDescription(): JobInfo {
     title: getText(titleSelectors),
     company: getText(companySelectors),
     description: getText(descSelectors),
-    url: window.location.href,
+    url: window.location.href
   };
 }
 
@@ -146,7 +163,7 @@ function getTotalJobCount(): number | null {
   const countSelectors = [
     '.jobsearch-JobCountAndSortPane-jobCount',
     '[data-testid="jobCount"]',
-    '.jobsearch-ResultsList-header span',
+    '.jobsearch-ResultsList-header span'
   ];
   for (const sel of countSelectors) {
     const el = document.querySelector(sel);
@@ -171,91 +188,59 @@ function getTotalPages(): number {
   );
   // Subtract 1 for the "next" link (pagination-page-next)
   const count = Array.from(pageLinks).filter(
-    el => el.getAttribute('data-testid') !== 'pagination-page-next'
+    (el) => el.getAttribute('data-testid') !== 'pagination-page-next'
   ).length;
   return Math.max(1, count);
 }
 
-// ── Pagination ──
-
-function getNextPageUrl(): string | null {
-  // Indeed pagination: look for the "Next" / "Próxima" link
-  const nextSelectors = [
-    'a[data-testid="pagination-page-next"]',
-    'nav[aria-label*="pagination"] a:last-child',
-    'nav[role="navigation"] a[aria-label*="Next"]',
-    'nav[role="navigation"] a[aria-label*="Próxima"]',
-    'a[aria-label*="Next"]',
-    'a[aria-label*="Próxima"]',
-  ];
-
-  for (const sel of nextSelectors) {
-    const el = document.querySelector(sel) as HTMLAnchorElement | null;
-    if (el && el.href) {
-      // Ensure it's a full URL
-      if (el.href.startsWith('/')) {
-        return `${window.location.origin}${el.href}`;
-      }
-      return el.href;
-    }
-  }
-
-  // Heuristic: find a link/button with "next" or "próxima" text
-  const navLinks = document.querySelectorAll('nav a, [aria-label*="agina"] a');
-  for (const link of navLinks) {
-    const text = (link.textContent || '').toLowerCase().trim();
-    const label = (link.getAttribute('aria-label') || '').toLowerCase();
-    if (text.includes('next') || text.includes('próxima') || label.includes('next') || label.includes('próxima')) {
-      const href = (link as HTMLAnchorElement).href;
-      if (href) return href;
-    }
-  }
-
-  return null;
-}
-
 // ── Message Listener ──
 
-chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) => {
-  // Only handle messages meant for the main Indeed page content script.
-  // Return false for unknown messages so smartapply.js (in iframe) can handle them.
-  switch (message.type) {
-    case 'COLLECT_LINKS': {
-      const links = collectIndeedApplyLinks();
-      sendResponse({ type: 'LINKS_COLLECTED', payload: links });
-      return true;
+chrome.runtime.onMessage.addListener(
+  (message: Message, _sender, sendResponse) => {
+    // Only handle messages meant for the main Indeed page content script.
+    // Return false for unknown messages so smartapply.js (in iframe) can handle them.
+    switch (message.type) {
+      case 'COLLECT_LINKS': {
+        const links = collectIndeedApplyLinks();
+        sendResponse({ type: 'LINKS_COLLECTED', payload: links });
+        return true;
+      }
+      case 'CLICK_APPLY': {
+        const result = findAndClickApply();
+        sendResponse({ type: 'APPLY_RESULT', payload: result });
+        return true;
+      }
+      case 'SCRAPE_JOB': {
+        const info = scrapeJobDescription();
+        sendResponse({ type: 'JOB_SCRAPED', payload: info });
+        return true;
+      }
+      case 'GET_TOTAL_COUNT': {
+        sendResponse({
+          type: 'TOTAL_COUNT',
+          payload: {
+            totalJobs: getTotalJobCount(),
+            totalPages: getTotalPages()
+          }
+        });
+        return true;
+      }
+      case 'GET_STATE': {
+        sendResponse({
+          type: 'STATUS_UPDATE',
+          payload: { ready: true, url: window.location.href }
+        });
+        return true;
+      }
+      default:
+        // Don't handle — let other content scripts (smartapply.js) respond
+        return false;
     }
-    case 'CLICK_APPLY': {
-      const result = findAndClickApply();
-      sendResponse({ type: 'APPLY_RESULT', payload: result });
-      return true;
-    }
-    case 'SCRAPE_JOB': {
-      const info = scrapeJobDescription();
-      sendResponse({ type: 'JOB_SCRAPED', payload: info });
-      return true;
-    }
-    case 'GET_NEXT_PAGE': {
-      const nextUrl = getNextPageUrl();
-      sendResponse({ type: 'NEXT_PAGE', payload: nextUrl });
-      return true;
-    }
-    case 'GET_TOTAL_COUNT': {
-      sendResponse({
-        type: 'TOTAL_COUNT',
-        payload: { totalJobs: getTotalJobCount(), totalPages: getTotalPages() },
-      });
-      return true;
-    }
-    case 'GET_STATE': {
-      sendResponse({ type: 'STATUS_UPDATE', payload: { ready: true, url: window.location.href } });
-      return true;
-    }
-    default:
-      // Don't handle — let other content scripts (smartapply.js) respond
-      return false;
   }
-});
+);
 
 // Announce to service worker that content script is ready
-chrome.runtime.sendMessage({ type: 'STATUS_UPDATE', payload: { contentScript: 'indeed', url: window.location.href } });
+chrome.runtime.sendMessage({
+  type: 'STATUS_UPDATE',
+  payload: { contentScript: 'indeed', url: window.location.href }
+});
