@@ -33,11 +33,21 @@ export function getCache(): AnswerCache {
 
 // ── State ──
 
+interface CvPayload {
+  cvData?: number[];
+  cvOnlyData?: number[];
+  cvFilename?: string;
+  coverData?: number[];
+  coverFilename?: string;
+  jobTitle: string;
+  baseProfile: string;
+}
+
 interface TabWorker {
   tabId: number;
   job: JobEntry;
   state: 'navigating' | 'filling' | 'waiting_review' | 'done';
-  cvPayload?: any; // Cached CV data for re-sending on STEP_ADVANCED
+  cvPayload?: CvPayload; // Cached CV data for re-sending on STEP_ADVANCED
 }
 
 let state: BotState = 'idle';
@@ -64,6 +74,7 @@ let collectionAlreadyKnown = 0;
 // Worker pool
 let tabWorkers: TabWorker[] = [];
 let collectionTabId: number | null = null;
+let collectionExtraTabIds: number[] = [];
 
 // PDF cache — reuse previously generated CVs by safeTitle key
 const pdfCache = new Map<
@@ -184,6 +195,7 @@ export async function startBot(userSettings: Settings): Promise<void> {
   totalSearchUrls = settings.searchUrls.length;
   tabWorkers = [];
   collectionTabId = null;
+  collectionExtraTabIds = [];
   collectionExternalApply = 0;
   collectionDuplicates = 0;
   collectionAlreadyKnown = 0;
@@ -353,7 +365,12 @@ async function collectAllJobs(): Promise<void> {
       let pageKnown = 0;
       for (const link of firstResult.links) {
         // Stop adding jobs once we have enough for maxApplies
-        if (settings.maxApplies > 0 && jobs.filter((j) => j.status === 'pending').length >= settings.maxApplies) break;
+        if (
+          settings.maxApplies > 0 &&
+          jobs.filter((j) => j.status === 'pending').length >= settings.maxApplies
+        ) {
+          break;
+        }
         if (seenJobKeys.has(link.jobKey)) {
           pageDupes++;
           collectionDuplicates++;
@@ -395,9 +412,7 @@ async function collectAllJobs(): Promise<void> {
         `Already have ${pendingCount} pending job(s) (maxApplies=${settings.maxApplies}) — skipping remaining pages`
       );
       collectionTabId = scrapingTabIds[0];
-      for (let i = 1; i < scrapingTabIds.length; i++) {
-        closeTab(scrapingTabIds[i]).catch(() => {});
-      }
+      collectionExtraTabIds = scrapingTabIds.slice(1);
       continue; // next search URL (or end)
     }
 
@@ -414,7 +429,11 @@ async function collectAllJobs(): Promise<void> {
 
       // Assign pages to tabs in parallel
       const pageAssignments: { tabId: number; pageNum: number; pageUrl: string }[] = [];
-      for (let i = 0; i < scrapingTabIds.length && globalEmptyStreak < LIMITS.emptyPageStreak; i++) {
+      for (
+        let i = 0;
+        i < scrapingTabIds.length && globalEmptyStreak < LIMITS.emptyPageStreak;
+        i++
+      ) {
         const pn = nextPage + i;
         // Don't exceed known total pages
         if (estimatedTotalJobs > 0 && totalPages > 0 && pn > totalPages) break;
@@ -462,7 +481,10 @@ async function collectAllJobs(): Promise<void> {
           const statsInfo = result.stats
             ? ` (${result.stats.totalCards} cards, ${result.stats.externalApply} external)`
             : '';
-          addLog('info', `Page ${pn} empty${statsInfo} (${globalEmptyStreak}/${LIMITS.emptyPageStreak} consecutive)`);
+          addLog(
+            'info',
+            `Page ${pn} empty${statsInfo} (${globalEmptyStreak}/${LIMITS.emptyPageStreak} consecutive)`
+          );
           continue;
         }
 
@@ -472,7 +494,12 @@ async function collectAllJobs(): Promise<void> {
         let pageDupes = 0;
         let pageKnown = 0;
         for (const link of result.links) {
-          if (settings.maxApplies > 0 && jobs.filter((j) => j.status === 'pending').length >= settings.maxApplies) break;
+          if (
+            settings.maxApplies > 0 &&
+            jobs.filter((j) => j.status === 'pending').length >= settings.maxApplies
+          ) {
+            break;
+          }
           if (seenJobKeys.has(link.jobKey)) {
             pageDupes++;
             collectionDuplicates++;
@@ -525,12 +552,10 @@ async function collectAllJobs(): Promise<void> {
     );
     console.log(`[collect] Search URL #${searchIdx + 1} finished: ${summaryParts.join(', ')}`);
 
-    // Keep first scraping tab as collectionTabId for reuse as first worker
+    // Keep all scraping tabs for reuse as worker tabs in the application phase
     collectionTabId = scrapingTabIds[0];
-    // Close extra scraping tabs (keep only the first one)
-    for (let i = 1; i < scrapingTabIds.length; i++) {
-      closeTab(scrapingTabIds[i]).catch(() => {});
-    }
+    // Store extra tabs for reuse (don't close them!)
+    collectionExtraTabIds = scrapingTabIds.slice(1);
   }
 }
 
@@ -562,15 +587,29 @@ async function collectAndApply(): Promise<void> {
 
   addLog('info', `Starting ${numWorkers} concurrent tab(s) for ${pendingJobs.length} jobs`);
 
-  // Reuse collection tab for the first worker
-  const reuseTabId = collectionTabId;
+  // Reuse collection tabs for workers (first tab + extras from scraping phase)
+  const reuseTabs: (number | null)[] = [];
+  if (collectionTabId) reuseTabs.push(collectionTabId);
+  for (const extraTab of collectionExtraTabIds) {
+    reuseTabs.push(extraTab);
+  }
   collectionTabId = null;
+  collectionExtraTabIds = [];
 
+  // Pad with nulls if we need more workers than reusable tabs
+  while (reuseTabs.length < numWorkers) reuseTabs.push(null);
+
+  // Launch all workers concurrently (don't await each one sequentially)
+  const workerPromises: Promise<void>[] = [];
   for (let i = 0; i < numWorkers; i++) {
     if (stopRequested) break;
-    await launchNextWorker(i === 0 ? reuseTabId : null);
-    await delay(TIMING.workerStaggerDelay); // Stagger tab creation slightly
+    const launchPromise = delay(i * TIMING.workerStaggerDelay).then(() =>
+      launchNextWorker(reuseTabs[i])
+    );
+    workerPromises.push(launchPromise);
   }
+  // Wait for all initial workers to reach their first fill/waiting state
+  await Promise.allSettled(workerPromises);
 
   // Wait for all workers to finish (event-driven via onStepAdvanced / onTabSubmitted)
   while (!stopRequested) {
@@ -838,7 +877,10 @@ const MAX_FILL_DEPTH = LIMITS.maxFillDepth;
 
 async function sendFillCommand(worker: TabWorker, depth = 0): Promise<void> {
   if (depth >= MAX_FILL_DEPTH) {
-    addLog('warning', `[Tab ${tabWorkers.indexOf(worker) + 1}] Max fill depth reached (${MAX_FILL_DEPTH}), waiting for user`);
+    addLog(
+      'warning',
+      `[Tab ${tabWorkers.indexOf(worker) + 1}] Max fill depth reached (${MAX_FILL_DEPTH}), waiting for user`
+    );
     worker.state = 'waiting_review';
     return;
   }
