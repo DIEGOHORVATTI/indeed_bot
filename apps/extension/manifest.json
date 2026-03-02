@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Indeed Auto Apply",
-  "version": "0.3.7",
+  "version": "0.3.8",
   "description": "Auto-apply to Indeed jobs with AI-tailored CV and smart form filling",
   "permissions": [
     "tabs",
