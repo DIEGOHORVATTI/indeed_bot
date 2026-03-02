@@ -623,6 +623,27 @@ async function handleSpecialPages(): Promise<boolean> {
     }
   }
 
+  // Additional-documents page: auto-select "Write a cover letter" radio if available
+  if (window.location.href.includes('additional-documents')) {
+    const coverLetterRadio = document.querySelector<HTMLInputElement>(
+      '[data-testid="cover-letter-radio-card-input"], input[name="cover-letter"][id*="cover-letter-radio-card"]'
+    );
+    const noCoverLetterRadio = document.querySelector<HTMLInputElement>(
+      '[data-testid="no-cover-letter-radio-card-input"], input[name="cover-letter"][id*="no-cover-letter"]'
+    );
+    if (coverLetterRadio && !coverLetterRadio.checked) {
+      coverLetterRadio.click();
+      log('📎 Auto-selected "Write a cover letter" on additional-documents page');
+      await waitMs(500);
+    }
+    // Prevent the no-cover-letter option from being selected by questionnaire logic
+    if (noCoverLetterRadio && noCoverLetterRadio.checked && coverLetterRadio) {
+      coverLetterRadio.click();
+      log('📎 Corrected: switched from "no cover letter" to "write cover letter"');
+      await waitMs(500);
+    }
+  }
+
   // Auto-check unchecked checkboxes that look like consent/agreement/opt-in
   const checkboxes = document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
   for (const cb of checkboxes) {
@@ -1022,6 +1043,9 @@ async function handleQuestionnaire(): Promise<{ needsUserInput: boolean; fieldLa
   }
 
   for (const [name, groupRadios] of radioGroups) {
+    // Skip cover-letter radio group — handled separately by handleCoverLetter / additional-documents logic
+    if (name === 'cover-letter') continue;
+
     const checked = document.querySelector<HTMLInputElement>(`input[name="${name}"]:checked`);
     if (checked) continue;
 
@@ -1074,6 +1098,96 @@ async function handleQuestionnaire(): Promise<{ needsUserInput: boolean; fieldLa
       }
     } else {
       groupRadios[0].click();
+    }
+  }
+
+  // Checkbox groups (multi-select questions)
+  const checkboxGroups = new Map<string, HTMLInputElement[]>();
+  const allCheckboxes = document.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+  for (const cb of allCheckboxes) {
+    if (!isVisible(cb)) continue;
+    const name = cb.name;
+    if (!name) continue;
+    // Skip consent/agreement checkboxes (already handled above)
+    const cbLabel = getLabelForInput(cb);
+    if (!cbLabel) continue;
+    if (!checkboxGroups.has(name)) checkboxGroups.set(name, []);
+    checkboxGroups.get(name)!.push(cb);
+  }
+
+  for (const [name, groupCbs] of checkboxGroups) {
+    // Skip if only 1 checkbox (likely a consent checkbox, already handled)
+    if (groupCbs.length < 2) continue;
+    // Skip if any already checked (user or bot already interacted)
+    if (groupCbs.some((cb) => cb.checked)) continue;
+
+    const optionLabels = groupCbs.map((cb) => getLabelForInput(cb) || cb.value);
+
+    let groupLabel = '';
+    try {
+      const questionContainer = groupCbs[0].closest(
+        '[data-testid*="input-q_"], .ia-Questions-item, fieldset'
+      );
+      if (questionContainer) {
+        const labelEl = questionContainer.querySelector(
+          '[data-testid*="-label"] [data-testid="safe-markup"], legend, [class*="label"]'
+        );
+        groupLabel = labelEl?.textContent?.trim() || '';
+      }
+      if (!groupLabel) {
+        const parent = groupCbs[0].closest('fieldset, [class*="Questions-item"], [id^="q_"]');
+        const allLabels = parent?.querySelectorAll('label, legend, span') || [];
+        for (const lbl of allLabels) {
+          const text = lbl.textContent?.trim() || '';
+          if (optionLabels.includes(text)) continue;
+          if (text.length > 5 && text.length < 500) {
+            groupLabel = text;
+            break;
+          }
+        }
+      }
+      if (!groupLabel) groupLabel = name;
+    } catch {
+      groupLabel = name;
+    }
+
+    log(`📝 Checkbox: "${groupLabel}" [options: ${optionLabels.join(', ')}]`);
+
+    // Ask Claude — instruct to return multiple answers separated by |
+    const multiQuestion = `${groupLabel}\n\n(MULTI-SELECT: You may choose one or more options. Separate multiple choices with | character. Pick ALL correct/best answers.)`;
+    const answer = await askClaude(multiQuestion, optionLabels);
+
+    if (answer) {
+      // Parse multiple answers separated by |
+      const selectedAnswers = answer
+        .split('|')
+        .map((a) => a.trim())
+        .filter((a) => a.length > 0);
+
+      let matched = 0;
+      for (const sel of selectedAnswers) {
+        const lower = sel.toLowerCase();
+        const idx = optionLabels.findIndex(
+          (lbl) =>
+            lbl.toLowerCase() === lower ||
+            lbl.toLowerCase().includes(lower) ||
+            lower.includes(lbl.toLowerCase())
+        );
+        if (idx >= 0 && !groupCbs[idx].checked) {
+          groupCbs[idx].click();
+          matched++;
+          log(`✅ Checked: "${optionLabels[idx]}" for "${groupLabel}"`);
+          await waitMs(200);
+        }
+      }
+
+      // If Claude returned something but nothing matched, try first option
+      if (matched === 0) {
+        groupCbs[0].click();
+        log(`⚠️ No match for checkbox "${groupLabel}", checked first: "${optionLabels[0]}"`);
+      }
+    } else {
+      return { needsUserInput: true, fieldLabel: groupLabel };
     }
   }
 

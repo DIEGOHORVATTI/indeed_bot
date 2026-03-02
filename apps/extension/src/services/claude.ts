@@ -66,6 +66,10 @@ export async function askClaudeForAnswer(
 
     // If options provided, find best match
     if (options && options.length > 0) {
+      // Multi-select: answer contains | separator — return as-is for caller to parse
+      if (answer.includes('|')) {
+        return answer;
+      }
       const lower = answer.toLowerCase();
       for (const opt of options) {
         if (

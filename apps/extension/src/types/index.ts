@@ -82,6 +82,9 @@ export const DEFAULT_SETTINGS: Settings = {
     baseCoverLetter: '',
     baseProfile: `# Dados Pessoais
 - Nome completo:
+- Empresa atual:
+- Cargo atual:
+- Período de aviso prévio:
 - Email:
 - Telefone:
 - Data de nascimento (DD/MM/YYYY):

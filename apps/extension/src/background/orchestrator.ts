@@ -363,6 +363,20 @@ async function collectAllJobs(): Promise<void> {
     currentPage = 1;
     broadcastStatus();
 
+    // Early exit: if maxApplies is set and we already have enough pending jobs, skip remaining pages
+    const pendingCount = jobs.filter((j) => j.status === 'pending').length;
+    if (settings.maxApplies > 0 && pendingCount >= settings.maxApplies) {
+      addLog(
+        'info',
+        `Already have ${pendingCount} pending job(s) (maxApplies=${settings.maxApplies}) — skipping remaining pages`
+      );
+      collectionTabId = scrapingTabIds[0];
+      for (let i = 1; i < scrapingTabIds.length; i++) {
+        closeTab(scrapingTabIds[i]).catch(() => {});
+      }
+      continue; // next search URL (or end)
+    }
+
     // Phase 2: Parallel scraping of remaining pages
     let nextPage = 2;
     let globalEmptyStreak = consecutiveEmptyPages;
@@ -460,6 +474,17 @@ async function collectAllJobs(): Promise<void> {
       }
 
       broadcastStatus();
+
+      // Early exit: enough pending jobs for maxApplies
+      const pendingNow = jobs.filter((j) => j.status === 'pending').length;
+      if (settings.maxApplies > 0 && pendingNow >= settings.maxApplies) {
+        addLog(
+          'info',
+          `Have ${pendingNow} pending job(s) (maxApplies=${settings.maxApplies}) — stopping collection early`
+        );
+        break;
+      }
+
       nextPage += pageAssignments.length;
       await randomDelay(1500, 3000);
     }
@@ -504,7 +529,11 @@ async function collectAndApply(): Promise<void> {
   broadcastStatus();
 
   const maxTabs = settings?.concurrentTabs || 1;
-  const numWorkers = Math.min(maxTabs, pendingJobs.length);
+  const remaining =
+    settings?.maxApplies && settings.maxApplies > 0
+      ? settings.maxApplies - appliedCount
+      : pendingJobs.length;
+  const numWorkers = Math.min(maxTabs, pendingJobs.length, remaining);
 
   addLog('info', `Starting ${numWorkers} concurrent tab(s) for ${pendingJobs.length} jobs`);
 
