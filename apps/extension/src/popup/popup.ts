@@ -85,20 +85,15 @@ function updateUI(status: BotStatus): void {
         : 0;
       progressFill.style.width = `${pct}%`;
     } else {
-      // Applying phase: show application progress
+      // Applying phase: show application progress + active workers
       const processed = status.appliedCount + status.skippedCount + status.failedCount;
       const pct = status.totalJobs > 0 ? Math.round((processed / status.totalJobs) * 100) : 0;
       progressFill.style.width = `${pct}%`;
 
-      if (status.totalSearchUrls && status.totalSearchUrls > 1 && status.currentSearchUrl) {
-        const idx = (status.currentSearchIndex ?? 0) + 1;
-        const truncUrl = status.currentSearchUrl.length > 45
-          ? status.currentSearchUrl.substring(0, 45) + '...'
-          : status.currentSearchUrl;
-        linkInfo.innerHTML = `<strong>Link ${idx}/${status.totalSearchUrls}</strong> — ${truncUrl}`;
-      } else {
-        linkInfo.innerHTML = '';
-      }
+      const workers = status.activeWorkers || 0;
+      const maxTabs = status.concurrentTabs || 1;
+      const workerInfo = `<strong>Active: ${workers}/${maxTabs} tabs</strong> — ${status.pendingJobs} pending`;
+      linkInfo.innerHTML = workerInfo;
     }
   } else {
     progressSection.style.display = 'none';

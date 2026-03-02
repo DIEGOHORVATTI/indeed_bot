@@ -1343,6 +1343,63 @@ function hasCoverLetterField(): boolean {
   return false;
 }
 
+// ── Page Advance Detection ──
+// Watches for DOM changes after user clicks native continue/submit buttons.
+
+let pageAdvanceObserver: MutationObserver | null = null;
+
+function watchForPageAdvance(): void {
+  // Clean up previous observer if any
+  if (pageAdvanceObserver) {
+    pageAdvanceObserver.disconnect();
+    pageAdvanceObserver = null;
+  }
+
+  const urlBefore = window.location.href;
+  const domSizeBefore = document.body?.innerHTML?.length || 0;
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const checkPageChange = () => {
+    const urlAfter = window.location.href;
+    const domSizeAfter = document.body?.innerHTML?.length || 0;
+    const urlChanged = urlAfter !== urlBefore;
+    const domChanged = Math.abs(domSizeAfter - domSizeBefore) > 200;
+
+    if (!urlChanged && !domChanged) return;
+
+    // Page has changed — disconnect observer
+    if (pageAdvanceObserver) {
+      pageAdvanceObserver.disconnect();
+      pageAdvanceObserver = null;
+    }
+
+    // Check if this is a submission confirmation
+    const isSubmitted = urlAfter.includes('confirmation') ||
+      urlAfter.includes('submitted') ||
+      urlAfter.includes('success') ||
+      urlAfter.includes('post-apply');
+
+    if (isSubmitted) {
+      log('Submission detected — notifying orchestrator');
+      chrome.runtime.sendMessage({ type: 'TAB_SUBMITTED' });
+    } else {
+      log('Page advanced — notifying orchestrator for next fill');
+      chrome.runtime.sendMessage({ type: 'STEP_ADVANCED' });
+    }
+  };
+
+  pageAdvanceObserver = new MutationObserver(() => {
+    // Debounce: wait 800ms after last DOM mutation before checking
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(checkPageChange, 800);
+  });
+
+  pageAdvanceObserver.observe(document.body, {
+    childList: true,
+    subtree: true,
+  });
+}
+
 // ── Message Listener ──
 
 chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) => {
@@ -1427,67 +1484,12 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
 
           await waitMs(500);
 
-          // Snapshot DOM state before clicking to detect if page changed
-          const urlBefore = window.location.href;
-          const domSnapshotBefore = document.body?.innerHTML?.length || 0;
-
-          let navResult = clickContinueOrSubmit();
-          log(`Navigation result: ${navResult}`);
-
-          // DOM-based AI fallback: when no button found, ask AI to analyze the page
-          if (navResult === 'none') {
-            log('⚠️ No navigation button found, trying DOM-based AI fallback...', 'warning');
-            navResult = await askClaudeForDomAction();
-            log(`DOM fallback result: ${navResult}`);
-          }
-
-          // Post-click error detection using MutationObserver
-          // Watches for: aria-invalid changes, error element insertions, role=alert
-          if (navResult === 'continued' || navResult === 'submitted') {
-            const errorsDetected = await waitForPostClickErrors(1500);
-
-            if (errorsDetected.length > 0) {
-              log(`⚠️ Form errors detected after clicking: ${errorsDetected.join(' | ')}`, 'warning');
-
-              const fixResult = await handlePostClickErrors(errorsDetected);
-              if (fixResult === 'fixed') {
-                await waitMs(500);
-                navResult = clickContinueOrSubmit();
-                log(`Retry navigation after fix: ${navResult}`);
-
-                // Check again after retry
-                const retryErrors = await waitForPostClickErrors(1000);
-                if (retryErrors.length > 0) {
-                  log('⚠️ Still errors after retry, sending DOM to AI', 'warning');
-                  navResult = await askClaudeForDomAction();
-                }
-              } else {
-                log('⚠️ Could not fix form errors, sending DOM to AI', 'warning');
-                navResult = await askClaudeForDomAction();
-              }
-            } else {
-              // No errors detected by observer — also check if page didn't change at all
-              const urlAfter = window.location.href;
-              const domSnapshotAfter = document.body?.innerHTML?.length || 0;
-              const pageChanged = urlAfter !== urlBefore || Math.abs(domSnapshotAfter - domSnapshotBefore) > 200;
-
-              if (!pageChanged) {
-                // Page really didn't change — do a final scan
-                const pageErrors = detectPageErrors();
-                if (pageErrors.length > 0) {
-                  log(`⚠️ Form errors found in final scan: ${pageErrors.join(' | ')}`, 'warning');
-                  const fixResult = await handlePostClickErrors(pageErrors);
-                  if (fixResult === 'fixed') {
-                    await waitMs(500);
-                    navResult = clickContinueOrSubmit();
-                    log(`Retry navigation after final fix: ${navResult}`);
-                  }
-                }
-              }
-            }
-          }
-
-          sendResponse({ type: 'STEP_RESULT', payload: { action: navResult } });
+          // Human-review mode: fill only, don't click continue/submit.
+          // User reviews filled fields and clicks native Indeed buttons.
+          // We watch for page changes to notify the orchestrator.
+          log('Fields filled — waiting for user to review and click Continue/Submit');
+          watchForPageAdvance();
+          sendResponse({ type: 'STEP_RESULT', payload: { action: 'filled' } });
         } catch (err) {
           log(`FILL_AND_ADVANCE ERROR: ${err}`, 'error');
           sendResponse({

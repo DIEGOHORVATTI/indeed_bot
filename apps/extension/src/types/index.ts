@@ -41,6 +41,7 @@ export interface Settings {
   searchUrls: string[];
   maxApplies: number; // 0 = unlimited
   availableToday: boolean; // When true, date fields asking "when can you start" → today's date
+  concurrentTabs: number; // 1-5, number of simultaneous application tabs
   personalization: {
     enabled: boolean;
     baseCv: string; // markdown content
@@ -56,6 +57,7 @@ export const DEFAULT_SETTINGS: Settings = {
   searchUrls: [],
   maxApplies: 0,
   availableToday: true,
+  concurrentTabs: 1,
   personalization: {
     enabled: true,
     baseCv: '',
@@ -177,7 +179,9 @@ export type MessageType =
   | 'PAUSE_BOT'
   | 'RESUME_BOT'
   | 'ADD_LOG'
-  | 'SCRAPE_LINKEDIN';
+  | 'SCRAPE_LINKEDIN'
+  | 'STEP_ADVANCED'
+  | 'TAB_SUBMITTED';
 
 export interface Message {
   type: MessageType;
@@ -217,6 +221,9 @@ export interface BotStatus {
   currentPage?: number;
   totalPages?: number;
   estimatedTotalJobs?: number;
+  // Worker pool
+  activeWorkers?: number;
+  concurrentTabs?: number;
   log: LogEntry[];
 }
 

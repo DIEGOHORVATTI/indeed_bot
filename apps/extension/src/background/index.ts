@@ -4,7 +4,7 @@
  */
 
 import { Message, Settings, DEFAULT_SETTINGS } from '../types';
-import { startBot, stopBot, pauseBot, resumeBot, getStatus, addLog, getCache } from './orchestrator';
+import { startBot, stopBot, pauseBot, resumeBot, getStatus, addLog, getCache, onStepAdvanced, onTabSubmitted } from './orchestrator';
 import { askClaudeForAnswer } from '../services/claude';
 import { setupNotificationListeners } from '../utils/notifications';
 
@@ -338,6 +338,20 @@ async function handleMessage(
           try { await chrome.tabs.remove(tabId); } catch { /* tab may already be closed */ }
         }
       }
+      break;
+    }
+
+    case 'STEP_ADVANCED': {
+      const tabId = sender.tab?.id;
+      if (tabId) onStepAdvanced(tabId);
+      sendResponse({ ok: true });
+      break;
+    }
+
+    case 'TAB_SUBMITTED': {
+      const submittedTabId = sender.tab?.id;
+      if (submittedTabId) onTabSubmitted(submittedTabId);
+      sendResponse({ ok: true });
       break;
     }
 
