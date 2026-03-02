@@ -54,47 +54,55 @@ export function fillCvTemplate(data: TailoredContent, profile?: ProfileSettings)
   html = html.replace('{{section_summary}}', data.section_summary || 'Resumo Profissional');
   html = html.replace('{{summary}}', data.summary || '');
   html = html.replace('{{section_skills}}', data.section_skills || 'Competências');
-  html = html.replace('{{section_experience}}', data.section_experience || 'Experiência Profissional');
+  html = html.replace(
+    '{{section_experience}}',
+    data.section_experience || 'Experiência Profissional'
+  );
   html = html.replace('{{section_education}}', data.section_education || 'Formação');
   html = html.replace('{{section_certifications}}', data.section_certifications || 'Certificações');
   html = html.replace('{{section_languages}}', data.section_languages || 'Idiomas');
 
   // Keywords badges
-  const keywordsHtml = (data.keywords || []).map(kw => `<span class="badge">${kw}</span>`).join('');
+  const keywordsHtml = (data.keywords || [])
+    .map((kw) => `<span class="badge">${kw}</span>`)
+    .join('');
   html = html.replace('{{keywords}}', keywordsHtml);
 
   // Skills grid
-  const skillsHtml = (data.skills || []).map(s =>
-    `<div class="row"><span class="label">${s.label}:</span> ${s.items}</div>`
-  ).join('\n');
+  const skillsHtml = (data.skills || [])
+    .map((s) => `<div class="row"><span class="label">${s.label}:</span> ${s.items}</div>`)
+    .join('\n');
   html = html.replace('{{skills}}', skillsHtml);
 
   // Experience
-  const expHtml = (data.experience || []).map(job => {
-    const bullets = (job.bullets || []).map(b => `<li>${b}</li>`).join('');
-    return `<div class="job">
+  const expHtml = (data.experience || [])
+    .map((job) => {
+      const bullets = (job.bullets || []).map((b) => `<li>${b}</li>`).join('');
+      return `<div class="job">
   <div class="job-header"><span class="job-title">${job.title}</span><span class="job-date">${job.date}</span></div>
   <div class="job-company">${job.company}</div>
   <ul>${bullets}</ul>
 </div>`;
-  }).join('\n');
+    })
+    .join('\n');
   html = html.replace('{{experience}}', expHtml);
 
   // Education
-  const eduHtml = (data.education || []).map(e =>
-    `<strong>${e.degree}</strong> | ${e.institution} | ${e.period}<br>`
-  ).join('\n');
+  const eduHtml = (data.education || [])
+    .map((e) => `<strong>${e.degree}</strong> | ${e.institution} | ${e.period}<br>`)
+    .join('\n');
   html = html.replace('{{education}}', eduHtml);
 
   // Certifications
   const certs = data.certifications || [];
-  const certsHtml = certs.length > 0
-    ? '<ul>' + certs.map(c => `<li>${c}</li>`).join('') + '</ul>'
-    : '';
+  const certsHtml =
+    certs.length > 0 ? '<ul>' + certs.map((c) => `<li>${c}</li>`).join('') + '</ul>' : '';
   html = html.replace('{{certifications}}', certsHtml);
 
   // Languages
-  const langsHtml = (data.languages || []).map(l => `${l.name} – ${l.level}`).join(' &nbsp;|&nbsp; ');
+  const langsHtml = (data.languages || [])
+    .map((l) => `${l.name} – ${l.level}`)
+    .join(' &nbsp;|&nbsp; ');
   html = html.replace('{{languages}}', langsHtml);
 
   // Additional info
@@ -119,13 +127,28 @@ export function fillCoverTemplate(data: TailoredContent, profile?: ProfileSettin
   // Date
   const now = new Date();
   const city = profile?.city || '';
-  const monthsPt = ['', 'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
-    'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
-  const dateStr = city ? `${city}, ${now.getDate()} de ${monthsPt[now.getMonth() + 1]} de ${now.getFullYear()}` : '';
+  const monthsPt = [
+    '',
+    'janeiro',
+    'fevereiro',
+    'março',
+    'abril',
+    'maio',
+    'junho',
+    'julho',
+    'agosto',
+    'setembro',
+    'outubro',
+    'novembro',
+    'dezembro'
+  ];
+  const dateStr = city
+    ? `${city}, ${now.getDate()} de ${monthsPt[now.getMonth() + 1]} de ${now.getFullYear()}`
+    : '';
   html = html.replace('{{date}}', dateStr);
 
   // Paragraphs
-  const parasHtml = (data.cover_paragraphs || []).map(p => `<p>${p}</p>`).join('\n');
+  const parasHtml = (data.cover_paragraphs || []).map((p) => `<p>${p}</p>`).join('\n');
   html = html.replace('{{paragraphs}}', parasHtml);
 
   return html;
@@ -148,11 +171,26 @@ export function fillCvWithCoverTemplate(data: TailoredContent, profile?: Profile
   // Date
   const now = new Date();
   const city = profile?.city || '';
-  const monthsPt = ['', 'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
-    'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
-  const dateStr = city ? `${city}, ${now.getDate()} de ${monthsPt[now.getMonth() + 1]} de ${now.getFullYear()}` : '';
+  const monthsPt = [
+    '',
+    'janeiro',
+    'fevereiro',
+    'março',
+    'abril',
+    'maio',
+    'junho',
+    'julho',
+    'agosto',
+    'setembro',
+    'outubro',
+    'novembro',
+    'dezembro'
+  ];
+  const dateStr = city
+    ? `${city}, ${now.getDate()} de ${monthsPt[now.getMonth() + 1]} de ${now.getFullYear()}`
+    : '';
 
-  const parasHtml = (data.cover_paragraphs || []).map(p => `<p>${p}</p>`).join('\n');
+  const parasHtml = (data.cover_paragraphs || []).map((p) => `<p>${p}</p>`).join('\n');
 
   const coverSection = `
 <!-- Cover Letter Page -->

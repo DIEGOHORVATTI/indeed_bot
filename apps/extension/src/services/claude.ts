@@ -52,7 +52,7 @@ export async function askClaudeForAnswer(
     const response = await fetch(`${backendUrl}/api/answer`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify(body)
     });
 
     if (!response.ok) {
@@ -101,13 +101,13 @@ export async function generateTailoredContent(
     jobCompany: jobInfo.company,
     jobDescription: jobInfo.description.substring(0, 4000),
     baseCv,
-    baseCoverLetter,
+    baseCoverLetter
   };
 
   const response = await fetch(`${backendUrl}/api/tailor`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify(body)
   });
 
   if (!response.ok) {
@@ -132,7 +132,7 @@ export async function generatePdfFromHtml(
   const response = await fetch(`${backendUrl}/api/generate-pdf`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ html, filename }),
+    body: JSON.stringify({ html, filename })
   });
 
   if (!response.ok) {
@@ -154,9 +154,7 @@ export async function fetchExistingPdf(
   if (!backendUrl || !filename) return null;
 
   try {
-    const response = await fetch(
-      `${backendUrl}/api/pdf/${encodeURIComponent(filename)}`
-    );
+    const response = await fetch(`${backendUrl}/api/pdf/${encodeURIComponent(filename)}`);
     if (!response.ok) return null;
     return response.arrayBuffer();
   } catch {

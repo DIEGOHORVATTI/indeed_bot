@@ -29,7 +29,10 @@ window.addEventListener('message', (event: MessageEvent) => {
     const input = document.querySelector<HTMLInputElement>(selector);
     if (!input) {
       console.warn('[smartapply-main] input not found:', selector);
-      window.postMessage({ type: 'smartapply-set-files-result', success: false, error: 'input not found' }, '*');
+      window.postMessage(
+        { type: 'smartapply-set-files-result', success: false, error: 'input not found' },
+        '*'
+      );
       return;
     }
 
@@ -45,9 +48,7 @@ window.addEventListener('message', (event: MessageEvent) => {
     const dt = new DataTransfer();
     dt.items.add(file);
 
-    const nativeSetter = Object.getOwnPropertyDescriptor(
-      HTMLInputElement.prototype, 'files'
-    )?.set;
+    const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'files')?.set;
     if (nativeSetter) {
       nativeSetter.call(input, dt.files);
     } else {
@@ -58,11 +59,17 @@ window.addEventListener('message', (event: MessageEvent) => {
     const tracker = (input as any)._valueTracker;
     if (tracker) tracker.setValue('');
 
-    console.log('[smartapply-main] files set on', selector, ':', input.files?.length, input.files?.[0]?.name);
+    console.log(
+      '[smartapply-main] files set on',
+      selector,
+      ':',
+      input.files?.length,
+      input.files?.[0]?.name
+    );
 
     // Strategy 1: Find React props directly on element (__reactProps$<hash>)
     const propsKey = Object.keys(input).find(
-      k => k.startsWith('__reactProps$') || k.startsWith('__reactEventHandlers$')
+      (k) => k.startsWith('__reactProps$') || k.startsWith('__reactEventHandlers$')
     );
     if (propsKey && (input as any)[propsKey]?.onChange) {
       console.log('[smartapply-main] calling onChange via', propsKey);
@@ -73,18 +80,25 @@ window.addEventListener('message', (event: MessageEvent) => {
         bubbles: true,
         preventDefault() {},
         stopPropagation() {},
-        isPropagationStopped() { return false; },
-        isDefaultPrevented() { return false; },
+        isPropagationStopped() {
+          return false;
+        },
+        isDefaultPrevented() {
+          return false;
+        },
         nativeEvent: new Event('change', { bubbles: true }),
-        persist() {},
+        persist() {}
       });
-      window.postMessage({ type: 'smartapply-set-files-result', success: true, method: 'reactProps' }, '*');
+      window.postMessage(
+        { type: 'smartapply-set-files-result', success: true, method: 'reactProps' },
+        '*'
+      );
       return;
     }
 
     // Strategy 2: Walk React fiber tree to find onChange
     const fiberKey = Object.keys(input).find(
-      k => k.startsWith('__reactFiber$') || k.startsWith('__reactInternalInstance$')
+      (k) => k.startsWith('__reactFiber$') || k.startsWith('__reactInternalInstance$')
     );
     if (fiberKey) {
       let fiber = (input as any)[fiberKey];
@@ -100,12 +114,19 @@ window.addEventListener('message', (event: MessageEvent) => {
             bubbles: true,
             preventDefault() {},
             stopPropagation() {},
-            isPropagationStopped() { return false; },
-            isDefaultPrevented() { return false; },
+            isPropagationStopped() {
+              return false;
+            },
+            isDefaultPrevented() {
+              return false;
+            },
             nativeEvent: new Event('change', { bubbles: true }),
-            persist() {},
+            persist() {}
           });
-          window.postMessage({ type: 'smartapply-set-files-result', success: true, method: 'reactFiber', depth }, '*');
+          window.postMessage(
+            { type: 'smartapply-set-files-result', success: true, method: 'reactFiber', depth },
+            '*'
+          );
           return;
         }
         fiber = fiber.return;
@@ -123,12 +144,20 @@ window.addEventListener('message', (event: MessageEvent) => {
       const dropDt = new DataTransfer();
       dropDt.items.add(file);
       input.dispatchEvent(new DragEvent('drop', { bubbles: true, dataTransfer: dropDt }));
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
 
-    window.postMessage({ type: 'smartapply-set-files-result', success: true, method: 'nativeEvents' }, '*');
+    window.postMessage(
+      { type: 'smartapply-set-files-result', success: true, method: 'nativeEvents' },
+      '*'
+    );
   } catch (err) {
     console.error('[smartapply-main] error:', err);
-    window.postMessage({ type: 'smartapply-set-files-result', success: false, error: String(err) }, '*');
+    window.postMessage(
+      { type: 'smartapply-set-files-result', success: false, error: String(err) },
+      '*'
+    );
   }
 });
 

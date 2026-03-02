@@ -38,7 +38,9 @@ function collectIndeedApplyLinks(): { url: string; jobKey: string }[] {
   const links: { url: string; jobKey: string }[] = [];
   const cards = document.querySelectorAll('div[data-testid="slider_item"]');
 
-  console.log(`[indeed-cs] collectLinks: found ${cards.length} job cards on ${window.location.href}`);
+  console.log(
+    `[indeed-cs] collectLinks: found ${cards.length} job cards on ${window.location.href}`
+  );
 
   let noApplyBtn = 0;
   let noLink = 0;
@@ -47,19 +49,26 @@ function collectIndeedApplyLinks(): { url: string; jobKey: string }[] {
 
   for (const card of cards) {
     const indeedApply = card.querySelector('[data-testid="indeedApply"]');
-    if (!indeedApply) { noApplyBtn++; continue; }
+    if (!indeedApply) {
+      noApplyBtn++;
+      continue;
+    }
 
-    const linkEl = card.querySelector(
-      'a.jcs-JobTitle'
-    ) as HTMLAnchorElement | null;
-    if (!linkEl) { noLink++; continue; }
+    const linkEl = card.querySelector('a.jcs-JobTitle') as HTMLAnchorElement | null;
+    if (!linkEl) {
+      noLink++;
+      continue;
+    }
 
     let jobUrl = linkEl.getAttribute('href') || '';
     if (jobUrl.startsWith('/')) {
       jobUrl = `${window.location.origin}${jobUrl}`;
     }
 
-    if (!isIndeedUrl(jobUrl)) { notIndeed++; continue; }
+    if (!isIndeedUrl(jobUrl)) {
+      notIndeed++;
+      continue;
+    }
 
     const jobKey = extractJobKey(jobUrl);
     if (jobKey) {
@@ -69,7 +78,9 @@ function collectIndeedApplyLinks(): { url: string; jobKey: string }[] {
     }
   }
 
-  console.log(`[indeed-cs] collectLinks result: ${links.length} valid, skipped: ${noApplyBtn} no-apply, ${noLink} no-link, ${notIndeed} not-indeed, ${noKey} no-key`);
+  console.log(
+    `[indeed-cs] collectLinks result: ${links.length} valid, skipped: ${noApplyBtn} no-apply, ${noLink} no-link, ${notIndeed} not-indeed, ${noKey} no-key`
+  );
   return links;
 }
 
@@ -104,12 +115,9 @@ function findAndClickApply(): 'clicked' | 'external' | 'not_found' {
     if (isExternalApplyButton(btn)) continue;
     const label = (btn.getAttribute('aria-label') || '').toLowerCase();
     const text = (btn.textContent || '').toLowerCase();
-    if (
-      ['close', 'cancel', 'fermer', 'annuler', 'fechar'].some((x) =>
-        label.includes(x)
-      )
-    )
+    if (['close', 'cancel', 'fermer', 'annuler', 'fechar'].some((x) => label.includes(x))) {
       continue;
+    }
     if (APPLY_HEURISTIC_KEYWORDS.some((kw) => text.includes(kw))) {
       (btn as HTMLElement).click();
       return 'clicked';
@@ -207,53 +215,51 @@ async function waitForJobCards(timeoutMs = 10000): Promise<number> {
 
 // ── Message Listener ──
 
-chrome.runtime.onMessage.addListener(
-  (message: Message, _sender, sendResponse) => {
-    // Only handle messages meant for the main Indeed page content script.
-    // Return false for unknown messages so smartapply.js (in iframe) can handle them.
-    switch (message.type) {
-      case 'COLLECT_LINKS': {
-        // Wait for cards to render before collecting
-        waitForJobCards().then((cardCount) => {
-          console.log(`[indeed-cs] waitForJobCards: ${cardCount} cards found`);
-          const links = collectIndeedApplyLinks();
-          sendResponse({ type: 'LINKS_COLLECTED', payload: links });
-        });
-        return true; // async response
-      }
-      case 'CLICK_APPLY': {
-        const result = findAndClickApply();
-        sendResponse({ type: 'APPLY_RESULT', payload: result });
-        return true;
-      }
-      case 'SCRAPE_JOB': {
-        const info = scrapeJobDescription();
-        sendResponse({ type: 'JOB_SCRAPED', payload: info });
-        return true;
-      }
-      case 'GET_TOTAL_COUNT': {
-        sendResponse({
-          type: 'TOTAL_COUNT',
-          payload: {
-            totalJobs: getTotalJobCount(),
-            totalPages: getTotalPages()
-          }
-        });
-        return true;
-      }
-      case 'GET_STATE': {
-        sendResponse({
-          type: 'STATUS_UPDATE',
-          payload: { ready: true, url: window.location.href }
-        });
-        return true;
-      }
-      default:
-        // Don't handle — let other content scripts (smartapply.js) respond
-        return false;
+chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) => {
+  // Only handle messages meant for the main Indeed page content script.
+  // Return false for unknown messages so smartapply.js (in iframe) can handle them.
+  switch (message.type) {
+    case 'COLLECT_LINKS': {
+      // Wait for cards to render before collecting
+      waitForJobCards().then((cardCount) => {
+        console.log(`[indeed-cs] waitForJobCards: ${cardCount} cards found`);
+        const links = collectIndeedApplyLinks();
+        sendResponse({ type: 'LINKS_COLLECTED', payload: links });
+      });
+      return true; // async response
     }
+    case 'CLICK_APPLY': {
+      const result = findAndClickApply();
+      sendResponse({ type: 'APPLY_RESULT', payload: result });
+      return true;
+    }
+    case 'SCRAPE_JOB': {
+      const info = scrapeJobDescription();
+      sendResponse({ type: 'JOB_SCRAPED', payload: info });
+      return true;
+    }
+    case 'GET_TOTAL_COUNT': {
+      sendResponse({
+        type: 'TOTAL_COUNT',
+        payload: {
+          totalJobs: getTotalJobCount(),
+          totalPages: getTotalPages()
+        }
+      });
+      return true;
+    }
+    case 'GET_STATE': {
+      sendResponse({
+        type: 'STATUS_UPDATE',
+        payload: { ready: true, url: window.location.href }
+      });
+      return true;
+    }
+    default:
+      // Don't handle — let other content scripts (smartapply.js) respond
+      return false;
   }
-);
+});
 
 // Announce to service worker that content script is ready
 chrome.runtime.sendMessage({

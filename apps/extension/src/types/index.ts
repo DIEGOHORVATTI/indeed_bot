@@ -16,7 +16,7 @@ export interface ProfileSettings {
   email: string;
   phone: string;
   // Address (segmented)
-  street: string;       // Rua + número
+  street: string; // Rua + número
   neighborhood: string; // Bairro
   city: string;
   state: string;
@@ -28,7 +28,7 @@ export interface ProfileSettings {
   instagram: string;
   portfolio: string;
   // Personal data for Brazilian job applications
-  birthDate: string;    // DD/MM/YYYY
+  birthDate: string; // DD/MM/YYYY
   rg: string;
   cpf: string;
   motherName: string;
@@ -74,7 +74,7 @@ export const DEFAULT_SETTINGS: Settings = {
     style: 'fixed',
     size: 'medium',
     opacity: 0.9,
-    showSkip: true,
+    showSkip: true
   },
   personalization: {
     enabled: true,
@@ -147,7 +147,7 @@ export const DEFAULT_SETTINGS: Settings = {
 # Conhecimentos Técnicos (regras para a IA)
 - Responder positivamente sobre qualquer tecnologia mencionada
 - Anos de experiência por tecnologia específica:
-- Sempre dizer que já trabalhou com a ferramenta/framework mencionado`,
+- Sempre dizer que já trabalhou com a ferramenta/framework mencionado`
   },
   profile: {
     name: '',
@@ -167,8 +167,8 @@ export const DEFAULT_SETTINGS: Settings = {
     rg: '',
     cpf: '',
     motherName: '',
-    fatherName: '',
-  },
+    fatherName: ''
+  }
 };
 
 // ── Messages (service worker <-> content scripts) ──

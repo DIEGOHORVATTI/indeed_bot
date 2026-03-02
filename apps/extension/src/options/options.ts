@@ -35,7 +35,7 @@ const fields = {
   fbStyle: $('fb-style') as unknown as HTMLSelectElement,
   fbSize: $('fb-size') as unknown as HTMLSelectElement,
   fbOpacity: $('fb-opacity'),
-  fbShowSkip: $('fb-show-skip'),
+  fbShowSkip: $('fb-show-skip')
 };
 
 // ── Load Settings ──
@@ -61,7 +61,8 @@ async function loadSettings(): Promise<void> {
   fields.personalizationEnabled.checked = s.personalization.enabled;
   fields.baseCv.value = s.personalization.baseCv;
   fields.baseCover.value = s.personalization.baseCoverLetter;
-  fields.baseProfile.value = s.personalization.baseProfile || DEFAULT_SETTINGS.personalization.baseProfile;
+  fields.baseProfile.value =
+    s.personalization.baseProfile || DEFAULT_SETTINGS.personalization.baseProfile;
   fields.profileName.value = s.profile.name;
   fields.profileEmail.value = s.profile.email;
   fields.profilePhone.value = s.profile.phone;
@@ -85,7 +86,10 @@ async function saveSettings(): Promise<void> {
 
   const settings: Settings = {
     backendUrl: prev.backendUrl || DEFAULT_SETTINGS.backendUrl,
-    searchUrls: fields.searchUrls.value.split('\n').map(u => u.trim()).filter(Boolean),
+    searchUrls: fields.searchUrls.value
+      .split('\n')
+      .map((u) => u.trim())
+      .filter(Boolean),
     language: fields.language.value,
     maxApplies: parseInt(fields.maxApplies.value) || 0,
     concurrentTabs: Math.max(1, Math.min(5, parseInt(fields.concurrentTabs.value) || 1)),
@@ -96,13 +100,13 @@ async function saveSettings(): Promise<void> {
       style: fields.fbStyle.value as FloatingButtonSettings['style'],
       size: fields.fbSize.value as FloatingButtonSettings['size'],
       opacity: Math.max(0.1, Math.min(1, parseFloat(fields.fbOpacity.value) || 0.9)),
-      showSkip: fields.fbShowSkip.checked,
+      showSkip: fields.fbShowSkip.checked
     },
     personalization: {
       enabled: fields.personalizationEnabled.checked,
       baseCv: fields.baseCv.value,
       baseCoverLetter: fields.baseCover.value,
-      baseProfile: fields.baseProfile.value,
+      baseProfile: fields.baseProfile.value
     },
     profile: {
       ...DEFAULT_SETTINGS.profile,
@@ -118,8 +122,8 @@ async function saveSettings(): Promise<void> {
       linkedin: fields.profileLinkedin.value.trim(),
       github: fields.profileGithub.value.trim(),
       instagram: fields.profileInstagram.value.trim(),
-      portfolio: fields.profilePortfolio.value.trim(),
-    },
+      portfolio: fields.profilePortfolio.value.trim()
+    }
   };
 
   await chrome.storage.local.set({ settings });
@@ -151,10 +155,7 @@ async function importLinkedIn(): Promise<void> {
 
   try {
     const response = await new Promise<any>((resolve) => {
-      chrome.runtime.sendMessage(
-        { type: 'SCRAPE_LINKEDIN', payload: { username } },
-        resolve,
-      );
+      chrome.runtime.sendMessage({ type: 'SCRAPE_LINKEDIN', payload: { username } }, resolve);
     });
 
     if (response?.error) {
@@ -235,7 +236,7 @@ async function importLinkedIn(): Promise<void> {
     if (data.name && data.headline) {
       const coverLines = [
         `Prezado(a) Recrutador(a),\n`,
-        `Meu nome é ${data.name} e sou ${data.headline}.`,
+        `Meu nome é ${data.name} e sou ${data.headline}.`
       ];
       if (data.about) {
         const firstSentence = data.about.split('.')[0] + '.';
@@ -243,12 +244,14 @@ async function importLinkedIn(): Promise<void> {
       }
       if (data.experience?.length) {
         const latest = data.experience[0];
-        coverLines.push(`Atualmente atuo como ${latest.title}${latest.company ? ` na ${latest.company}` : ''}.`);
+        coverLines.push(
+          `Atualmente atuo como ${latest.title}${latest.company ? ` na ${latest.company}` : ''}.`
+        );
       }
       coverLines.push(
         `\nEstou à disposição para uma conversa e posso contribuir significativamente para o sucesso da equipe.\n`,
         `Atenciosamente,`,
-        data.name,
+        data.name
       );
       fields.baseCover.value = coverLines.join('\n');
     }
@@ -262,7 +265,7 @@ async function importLinkedIn(): Promise<void> {
       'Portfolio/Website:': `Portfolio/Website: ${data.portfolio || ''}`,
       'Instagram:': `Instagram: ${data.instagram || ''}`,
       'Cidade:': `Cidade: ${data.city || ''}`,
-      'Estado:': `Estado: ${data.state || ''}`,
+      'Estado:': `Estado: ${data.state || ''}`
     };
     let updatedProfile = currentProfile;
     for (const [key, value] of Object.entries(replacements)) {

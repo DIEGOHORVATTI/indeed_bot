@@ -11,7 +11,7 @@ export async function createTabGroup(url: string): Promise<{ tabId: number; grou
   await chrome.tabGroups.update(gId, {
     title: 'Indeed Apply',
     color: 'blue',
-    collapsed: false,
+    collapsed: false
   });
   groupId = gId;
   return { tabId: tab.id!, groupId: gId };
@@ -28,7 +28,9 @@ export async function addTabToGroup(url: string): Promise<number> {
 export async function closeTab(tabId: number): Promise<void> {
   try {
     await chrome.tabs.remove(tabId);
-  } catch { /* tab may already be closed */ }
+  } catch {
+    /* tab may already be closed */
+  }
 }
 
 export async function navigateTab(tabId: number, url: string): Promise<void> {
@@ -36,7 +38,7 @@ export async function navigateTab(tabId: number, url: string): Promise<void> {
 }
 
 export async function waitForTabLoad(tabId: number, timeoutMs = 15000): Promise<boolean> {
-  return new Promise(resolve => {
+  return new Promise((resolve) => {
     let resolved = false;
 
     const done = (result: boolean) => {

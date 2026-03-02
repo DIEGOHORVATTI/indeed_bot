@@ -122,7 +122,11 @@ function updateUI(status: BotStatus): void {
   for (const entry of status.log.slice(-30)) {
     const div = document.createElement('div');
     div.className = `log-entry ${entry.level}`;
-    const time = new Date(entry.timestamp).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const time = new Date(entry.timestamp).toLocaleTimeString('pt-BR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
     const timeSpan = document.createElement('span');
     timeSpan.className = 'time';
     timeSpan.textContent = time;
