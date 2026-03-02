@@ -50,7 +50,7 @@ export interface Settings {
   searchUrls: string[];
   maxApplies: number; // 0 = unlimited
   availableToday: boolean; // When true, date fields asking "when can you start" → today's date
-  concurrentTabs: number; // 1-5, number of simultaneous application tabs
+  scrapingTabs: number; // 1-5, number of parallel tabs for job collection
   floatingButton: FloatingButtonSettings;
   personalization: {
     enabled: boolean;
@@ -67,7 +67,7 @@ export const DEFAULT_SETTINGS: Settings = {
   searchUrls: [],
   maxApplies: 0,
   availableToday: true,
-  concurrentTabs: 1,
+  scrapingTabs: 1,
   floatingButton: {
     enabled: true,
     position: 'bottom-right',
@@ -251,7 +251,7 @@ export interface BotStatus {
   };
   // Worker pool
   activeWorkers?: number;
-  concurrentTabs?: number;
+  scrapingTabs?: number;
   log: LogEntry[];
 }
 

@@ -3,6 +3,7 @@
  */
 
 import { BotStatus } from '../types';
+import { initI18n, translatePage, t } from '../utils/translate';
 
 const $ = (id: string) => document.getElementById(id)!;
 
@@ -51,11 +52,18 @@ btnOptions.addEventListener('click', (e) => {
   chrome.runtime.openOptionsPage();
 });
 
-// ── Status Updates ──
+// ── Status state → i18n key ──
+const stateI18nKey: Record<string, string> = {
+  idle: 'status_idle',
+  collecting: 'status_collecting',
+  applying: 'status_applying',
+  paused: 'status_paused',
+  waiting_user: 'status_waiting_user'
+};
 
 function updateUI(status: BotStatus): void {
   // Badge
-  statusBadge.textContent = status.state.replace('_', ' ');
+  statusBadge.textContent = t(stateI18nKey[status.state] || status.state);
   statusBadge.className = `badge ${status.state}`;
 
   // Stats — skipped includes external apply jobs from collection
@@ -87,7 +95,7 @@ function updateUI(status: BotStatus): void {
       const parts = [`${status.totalJobs} apply`];
       if (cs?.externalApply) parts.push(`${cs.externalApply} external`);
       if (cs?.alreadyKnown) parts.push(`${cs.alreadyKnown} known`);
-      linkInfo.innerHTML = `<strong>Collecting:</strong> ${pageInfo} — ${parts.join(', ')}`;
+      linkInfo.innerHTML = `<strong>${t('coletando')}</strong> ${pageInfo} — ${parts.join(', ')}`;
 
       // Progress based on pages scraped vs total
       const pct = status.totalPages
@@ -101,8 +109,7 @@ function updateUI(status: BotStatus): void {
       progressFill.style.width = `${pct}%`;
 
       const workers = status.activeWorkers || 0;
-      const maxTabs = status.concurrentTabs || 1;
-      const workerInfo = `<strong>Active: ${workers}/${maxTabs} tabs</strong> — ${status.pendingJobs} pending`;
+      const workerInfo = `<strong>${t('ativo')} ${workers}/1 ${t('aba')}</strong> — ${status.pendingJobs} ${t('pendente')}`;
       linkInfo.innerHTML = workerInfo;
     }
   } else {
@@ -149,11 +156,15 @@ function updateUI(status: BotStatus): void {
 
 // ── Init ──
 
-// Get current state
-chrome.runtime.sendMessage({ type: 'GET_STATE' }, (response) => {
-  if (response?.payload) {
-    updateUI(response.payload);
-  }
+initI18n().then(() => {
+  translatePage();
+
+  // Get current state
+  chrome.runtime.sendMessage({ type: 'GET_STATE' }, (response) => {
+    if (response?.payload) {
+      updateUI(response.payload);
+    }
+  });
 });
 
 // Listen for status updates

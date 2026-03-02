@@ -8,6 +8,7 @@
         "@eslint/js": "^9.39.3",
         "@types/chrome": "^0.0.287",
         "copy-webpack-plugin": "^12.0.2",
+        "easy-translate-i18n": "^1.1.3",
         "eslint": "^9.39.3",
         "eslint-config-prettier": "^10.1.8",
         "eslint-plugin-prettier": "^5.5.5",
@@ -202,6 +203,8 @@
     "debug": ["debug@4.4.3", "", { "dependencies": { "ms": "^2.1.3" } }, "sha512-RGwwWnwQvkVfavKVt22FGLw+xYSdzARwm0ru6DhTVA3umU5hZc28V3kO4stgYryrTlLpuvgI9GiijltAjNbcqA=="],
 
     "deep-is": ["deep-is@0.1.4", "", {}, "sha512-oIPzksmTg4/MriiaYGO+okXDT7ztn/w3Eptv/+gSIdMdKsJo0u4CfYNFJPy+4SKMuCqGw2wxnA+URMg3t8a/bQ=="],
+
+    "easy-translate-i18n": ["easy-translate-i18n@1.1.3", "", { "bin": { "easy-translate-i18n": "dist/src/index.js" } }, "sha512-lzE/zal7zVcyZZNh2t70wCR9WeK3SMEH4oyLzTEQIEMPLIdwW1vus/ctNELjiJm+ttQZKbvmchKau1sdrNCs6Q=="],
 
     "electron-to-chromium": ["electron-to-chromium@1.5.302", "", {}, "sha512-sM6HAN2LyK82IyPBpznDRqlTQAtuSaO+ShzFiWTvoMJLHyZ+Y39r8VMfHzwbU8MVBzQ4Wdn85+wlZl2TLGIlwg=="],
 

@@ -3,6 +3,7 @@
  */
 
 import { Settings, DEFAULT_SETTINGS, FloatingButtonSettings } from '../types';
+import { initI18n, translatePage, t } from '../utils/translate';
 
 const $ = (id: string) => document.getElementById(id) as HTMLInputElement;
 
@@ -11,7 +12,7 @@ const fields = {
   searchUrls: $('search-urls') as unknown as HTMLTextAreaElement,
   language: $('language') as unknown as HTMLSelectElement,
   maxApplies: $('max-applies'),
-  concurrentTabs: $('concurrent-tabs'),
+  scrapingTabs: $('scraping-tabs'),
   availableToday: $('available-today'),
   personalizationEnabled: $('personalization-enabled'),
   baseCv: $('base-cv') as unknown as HTMLTextAreaElement,
@@ -47,7 +48,7 @@ async function loadSettings(): Promise<void> {
   fields.searchUrls.value = s.searchUrls.join('\n');
   fields.language.value = s.language;
   fields.maxApplies.value = String(s.maxApplies);
-  fields.concurrentTabs.value = String(s.concurrentTabs || 1);
+  fields.scrapingTabs.value = String(s.scrapingTabs || (s as any).concurrentTabs || 1);
   fields.availableToday.checked = s.availableToday !== false; // default true
   // Floating button
   const fb = { ...DEFAULT_SETTINGS.floatingButton, ...s.floatingButton };
@@ -92,7 +93,7 @@ async function saveSettings(): Promise<void> {
       .filter(Boolean),
     language: fields.language.value,
     maxApplies: parseInt(fields.maxApplies.value) || 0,
-    concurrentTabs: Math.max(1, Math.min(5, parseInt(fields.concurrentTabs.value) || 1)),
+    scrapingTabs: Math.max(1, Math.min(5, parseInt(fields.scrapingTabs.value) || 1)),
     availableToday: fields.availableToday.checked,
     floatingButton: {
       enabled: fields.fbEnabled.checked,
@@ -143,14 +144,14 @@ async function importLinkedIn(): Promise<void> {
   const username = usernameInput.value.trim();
 
   if (!username) {
-    statusEl.textContent = 'Enter a LinkedIn username or URL';
+    statusEl.textContent = t('insira_usuario_linkedin');
     statusEl.className = 'import-status error';
     return;
   }
 
   btn.disabled = true;
-  btn.textContent = 'Importing...';
-  statusEl.textContent = 'Opening LinkedIn profile...';
+  btn.textContent = t('importando');
+  statusEl.textContent = t('abrindo_perfil_linkedin');
   statusEl.className = 'import-status';
 
   try {
@@ -274,19 +275,22 @@ async function importLinkedIn(): Promise<void> {
     }
     fields.baseProfile.value = updatedProfile;
 
-    statusEl.textContent = 'Profile imported! Review all fields and click Save.';
+    statusEl.textContent = t('perfil_importado');
     statusEl.className = 'import-status success';
   } catch (err: any) {
     statusEl.textContent = err.message || 'Failed to import';
     statusEl.className = 'import-status error';
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Import';
+    btn.textContent = t('importar');
   }
 }
 
 // ── Init ──
 
-loadSettings();
+initI18n().then(() => {
+  translatePage();
+  loadSettings();
+});
 document.getElementById('btn-save')!.addEventListener('click', saveSettings);
 document.getElementById('btn-import-linkedin')!.addEventListener('click', importLinkedIn);

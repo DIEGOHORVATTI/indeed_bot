@@ -1,7 +1,7 @@
 /**
  * Bot orchestrator — state machine that drives the application flow.
  * Human-review mode: auto-fills forms, user clicks native buttons to advance.
- * Supports concurrent tab workers for parallel applications.
+ * Supports concurrent tabs for parallel scraping, single-tab application.
  */
 
 import { BotState, BotStatus, JobEntry, LogEntry, Message, Settings } from '../types';
@@ -122,8 +122,8 @@ export function getStatus(): BotStatus {
     totalPages,
     estimatedTotalJobs,
     activeWorkers,
-    concurrentTabs: Math.min(
-      settings?.concurrentTabs || 1,
+    scrapingTabs: Math.min(
+      settings?.scrapingTabs || 1,
       settings?.maxApplies && settings.maxApplies > 0 ? settings.maxApplies : Infinity,
       jobs.filter((j) => j.status === 'pending').length || 1
     ),
@@ -301,7 +301,7 @@ async function collectAllJobs(): Promise<void> {
   if (!settings) return;
 
   totalSearchUrls = settings.searchUrls.length;
-  const configuredTabs = settings.concurrentTabs || 1;
+  const configuredTabs = settings.scrapingTabs || 1;
   // Limit tabs to maxApplies if set (no point opening 5 tabs for 1 apply)
   const scrapingTabs =
     settings.maxApplies > 0 ? Math.min(configuredTabs, settings.maxApplies) : configuredTabs;
@@ -578,38 +578,20 @@ async function collectAndApply(): Promise<void> {
   state = 'applying';
   broadcastStatus();
 
-  const maxTabs = settings?.concurrentTabs || 1;
-  const remaining =
-    settings?.maxApplies && settings.maxApplies > 0
-      ? settings.maxApplies - appliedCount
-      : pendingJobs.length;
-  const numWorkers = Math.min(maxTabs, pendingJobs.length, remaining);
+  addLog('info', `Starting application for ${pendingJobs.length} jobs (single tab)`);
 
-  addLog('info', `Starting ${numWorkers} concurrent tab(s) for ${pendingJobs.length} jobs`);
-
-  // Reuse collection tabs for workers (first tab + extras from scraping phase)
-  const reuseTabs: (number | null)[] = [];
-  if (collectionTabId) reuseTabs.push(collectionTabId);
-  for (const extraTab of collectionExtraTabIds) {
-    reuseTabs.push(extraTab);
-  }
+  // Reuse first collection tab for the single worker; close extras
+  const reuseTabId = collectionTabId;
   collectionTabId = null;
+  for (const extraTab of collectionExtraTabIds) {
+    closeTab(extraTab).catch(() => {});
+  }
   collectionExtraTabIds = [];
 
-  // Pad with nulls if we need more workers than reusable tabs
-  while (reuseTabs.length < numWorkers) reuseTabs.push(null);
-
-  // Launch all workers concurrently (don't await each one sequentially)
-  const workerPromises: Promise<void>[] = [];
-  for (let i = 0; i < numWorkers; i++) {
-    if (stopRequested) break;
-    const launchPromise = delay(i * TIMING.workerStaggerDelay).then(() =>
-      launchNextWorker(reuseTabs[i])
-    );
-    workerPromises.push(launchPromise);
+  // Launch single worker
+  if (!stopRequested) {
+    await launchNextWorker(reuseTabId);
   }
-  // Wait for all initial workers to reach their first fill/waiting state
-  await Promise.allSettled(workerPromises);
 
   // Wait for all workers to finish (event-driven via onStepAdvanced / onTabSubmitted)
   while (!stopRequested) {

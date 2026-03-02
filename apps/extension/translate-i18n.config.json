@@ -1,0 +1,5 @@
+{
+  "defaultLocale": "pt-BR",
+  "path": "./src/locales/{{locale}}.json",
+  "locales": ["pt-BR", "en", "es"]
+}

@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Indeed Auto Apply — Settings</title>
+  <title data-i18n="titulo_extensao">Indeed Auto Apply — Settings</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -121,101 +121,101 @@
   </style>
 </head>
 <body>
-  <h1>Indeed Auto Apply</h1>
-  <p class="subtitle">Configure your bot settings</p>
+  <h1 data-i18n="titulo_extensao">Indeed Auto Apply</h1>
+  <p class="subtitle" data-i18n="configurar_bot">Configure your bot settings</p>
 
   <div class="section">
-    <h2>Quick Setup</h2>
-    <div class="hint" style="margin-bottom: 12px">Import your LinkedIn profile to auto-fill CV, cover letter, and personal data.</div>
+    <h2 data-i18n="configuracao_rapida">Quick Setup</h2>
+    <div class="hint" style="margin-bottom: 12px" data-i18n="importar_linkedin_dica">Import your LinkedIn profile to auto-fill CV, cover letter, and personal data.</div>
     <div class="import-row">
       <div class="field">
-        <label for="linkedin-username">LinkedIn username or URL</label>
-        <input type="text" id="linkedin-username" placeholder="diego-horvatti or https://linkedin.com/in/...">
+        <label for="linkedin-username" data-i18n="linkedin_usuario_ou_url">LinkedIn username or URL</label>
+        <input type="text" id="linkedin-username" data-i18n-placeholder="linkedin_placeholder" placeholder="diego-horvatti or https://linkedin.com/in/...">
       </div>
-      <button class="btn btn-secondary" id="btn-import-linkedin">Import</button>
+      <button class="btn btn-secondary" id="btn-import-linkedin" data-i18n="importar">Import</button>
     </div>
     <div class="import-status" id="import-status"></div>
   </div>
 
   <div class="section">
-    <h2>Search</h2>
+    <h2 data-i18n="busca">Search</h2>
     <div class="field">
-      <label for="search-urls">Search URLs (one per line)</label>
-      <div class="hint">Go to Indeed, configure your filters, copy the URL</div>
-      <textarea id="search-urls" rows="4" placeholder="https://br.indeed.com/jobs?q=full+stack&l=..."></textarea>
+      <label for="search-urls" data-i18n="urls_busca">Search URLs (one per line)</label>
+      <div class="hint" data-i18n="urls_busca_dica">Go to Indeed, configure your filters, copy the URL</div>
+      <textarea id="search-urls" rows="4" data-i18n-placeholder="urls_busca_placeholder" placeholder="https://br.indeed.com/jobs?q=full+stack&l=..."></textarea>
     </div>
     <div class="row">
       <div class="field">
-        <label for="language">Language</label>
+        <label for="language" data-i18n="idioma">Language</label>
         <select id="language">
-          <option value="br">Brasil (br)</option>
-          <option value="us">USA (us)</option>
-          <option value="uk">UK (uk)</option>
-          <option value="fr">France (fr)</option>
-          <option value="de">Germany (de)</option>
-          <option value="es">Spain (es)</option>
+          <option value="br" data-i18n="idioma_br">Brasil (br)</option>
+          <option value="us" data-i18n="idioma_us">USA (us)</option>
+          <option value="uk" data-i18n="idioma_uk">UK (uk)</option>
+          <option value="fr" data-i18n="idioma_fr">France (fr)</option>
+          <option value="de" data-i18n="idioma_de">Germany (de)</option>
+          <option value="es" data-i18n="idioma_es">Spain (es)</option>
         </select>
       </div>
       <div class="field">
-        <label for="max-applies">Max Applies</label>
+        <label for="max-applies" data-i18n="max_candidaturas">Max Applies</label>
         <input type="number" id="max-applies" min="0" value="0">
-        <div class="hint">0 = unlimited</div>
+        <div class="hint" data-i18n="ilimitado">0 = unlimited</div>
       </div>
     </div>
     <div class="row">
       <div class="field">
-        <label for="concurrent-tabs">Concurrent Tabs</label>
-        <input type="number" id="concurrent-tabs" min="1" max="5" value="1">
-        <div class="hint">Number of simultaneous application tabs (1-5)</div>
+        <label for="scraping-tabs" data-i18n="abas_coleta">Scraping Tabs</label>
+        <input type="number" id="scraping-tabs" min="1" max="5" value="1">
+        <div class="hint" data-i18n="abas_coleta_dica">Number of parallel tabs for job collection (1-5). Applications always use a single tab.</div>
       </div>
     </div>
     <div class="field">
       <div class="toggle">
         <input type="checkbox" id="available-today" checked>
-        <label for="available-today">Available to start working today</label>
+        <label for="available-today" data-i18n="disponivel_hoje">Available to start working today</label>
       </div>
-      <div class="hint">When checked, date fields asking "when can you start?" will be filled with today's date</div>
+      <div class="hint" data-i18n="disponivel_hoje_dica">When checked, date fields asking "when can you start?" will be filled with today's date</div>
     </div>
   </div>
 
   <div class="section">
-    <h2>Profile</h2>
+    <h2 data-i18n="perfil">Profile</h2>
     <div class="row">
       <div class="field">
-        <label for="profile-name">Name</label>
+        <label for="profile-name" data-i18n="nome">Name</label>
         <input type="text" id="profile-name">
       </div>
       <div class="field">
-        <label for="profile-email">Email</label>
+        <label for="profile-email" data-i18n="email">Email</label>
         <input type="text" id="profile-email">
       </div>
     </div>
     <div class="field">
-      <label for="profile-phone">Phone</label>
+      <label for="profile-phone" data-i18n="telefone">Phone</label>
       <input type="text" id="profile-phone">
     </div>
     <div class="row">
       <div class="field" style="flex:2">
-        <label for="profile-street">Rua + número</label>
-        <input type="text" id="profile-street" placeholder="Rua Exemplo, 123">
+        <label for="profile-street" data-i18n="rua_numero">Rua + número</label>
+        <input type="text" id="profile-street" data-i18n-placeholder="rua_placeholder" placeholder="Rua Exemplo, 123">
       </div>
       <div class="field">
-        <label for="profile-neighborhood">Bairro</label>
+        <label for="profile-neighborhood" data-i18n="bairro">Bairro</label>
         <input type="text" id="profile-neighborhood">
       </div>
     </div>
     <div class="row">
       <div class="field">
-        <label for="profile-city">Cidade</label>
+        <label for="profile-city" data-i18n="cidade">Cidade</label>
         <input type="text" id="profile-city">
       </div>
       <div class="field">
-        <label for="profile-state">Estado</label>
+        <label for="profile-state" data-i18n="estado">Estado</label>
         <input type="text" id="profile-state">
       </div>
       <div class="field">
-        <label for="profile-cep">CEP</label>
-        <input type="text" id="profile-cep" placeholder="00000-000">
+        <label for="profile-cep" data-i18n="cep">CEP</label>
+        <input type="text" id="profile-cep" data-i18n-placeholder="cep_placeholder" placeholder="00000-000">
       </div>
     </div>
     <div class="row">
@@ -241,82 +241,82 @@
   </div>
 
   <div class="section">
-    <h2>Floating Button</h2>
-    <div class="hint" style="margin-bottom: 12px">A floating "Next" button injected on SmartApply pages so you can advance the wizard without scrolling to the native button.</div>
+    <h2 data-i18n="botao_flutuante">Floating Button</h2>
+    <div class="hint" style="margin-bottom: 12px" data-i18n="botao_flutuante_dica">A floating "Next" button injected on SmartApply pages so you can advance the wizard without scrolling to the native button.</div>
     <div class="field">
       <div class="toggle">
         <input type="checkbox" id="fb-enabled" checked>
-        <label for="fb-enabled">Enable floating button</label>
+        <label for="fb-enabled" data-i18n="habilitar_botao_flutuante">Enable floating button</label>
       </div>
     </div>
     <div class="row">
       <div class="field">
-        <label for="fb-position">Position</label>
+        <label for="fb-position" data-i18n="posicao">Position</label>
         <select id="fb-position">
-          <option value="top-left">Top Left</option>
-          <option value="top-right">Top Right</option>
-          <option value="bottom-left">Bottom Left</option>
-          <option value="bottom-right" selected>Bottom Right</option>
+          <option value="top-left" data-i18n="pos_superior_esquerda">Top Left</option>
+          <option value="top-right" data-i18n="pos_superior_direita">Top Right</option>
+          <option value="bottom-left" data-i18n="pos_inferior_esquerda">Bottom Left</option>
+          <option value="bottom-right" selected data-i18n="pos_inferior_direita">Bottom Right</option>
         </select>
       </div>
       <div class="field">
-        <label for="fb-style">CSS Position</label>
+        <label for="fb-style" data-i18n="posicao_css">CSS Position</label>
         <select id="fb-style">
-          <option value="fixed">Fixed (stays on screen)</option>
-          <option value="sticky">Sticky (scrolls then sticks)</option>
-          <option value="absolute">Absolute (relative to page)</option>
+          <option value="fixed" data-i18n="css_fixo">Fixed (stays on screen)</option>
+          <option value="sticky" data-i18n="css_sticky">Sticky (scrolls then sticks)</option>
+          <option value="absolute" data-i18n="css_absoluto">Absolute (relative to page)</option>
         </select>
       </div>
     </div>
     <div class="row">
       <div class="field">
-        <label for="fb-size">Button Size</label>
+        <label for="fb-size" data-i18n="tamanho_botao">Button Size</label>
         <select id="fb-size">
-          <option value="small">Small</option>
-          <option value="medium" selected>Medium</option>
-          <option value="large">Large</option>
+          <option value="small" data-i18n="tam_pequeno">Small</option>
+          <option value="medium" selected data-i18n="tam_medio">Medium</option>
+          <option value="large" data-i18n="tam_grande">Large</option>
         </select>
       </div>
       <div class="field">
-        <label for="fb-opacity">Opacity</label>
+        <label for="fb-opacity" data-i18n="opacidade">Opacity</label>
         <input type="number" id="fb-opacity" min="0.1" max="1" step="0.1" value="0.9">
-        <div class="hint">0.1 (transparent) — 1.0 (opaque)</div>
+        <div class="hint" data-i18n="opacidade_dica">0.1 (transparent) — 1.0 (opaque)</div>
       </div>
     </div>
     <div class="field">
       <div class="toggle">
         <input type="checkbox" id="fb-show-skip" checked>
-        <label for="fb-show-skip">Show "Skip" button alongside "Next"</label>
+        <label for="fb-show-skip" data-i18n="mostrar_botao_pular">Show "Skip" button alongside "Next"</label>
       </div>
     </div>
   </div>
 
   <div class="section">
-    <h2>Personalization</h2>
+    <h2 data-i18n="personalizacao">Personalization</h2>
     <div class="field">
       <div class="toggle">
         <input type="checkbox" id="personalization-enabled" checked>
-        <label for="personalization-enabled">Generate AI-tailored CV and cover letter per job</label>
+        <label for="personalization-enabled" data-i18n="gerar_cv_ia">Generate AI-tailored CV and cover letter per job</label>
       </div>
     </div>
     <div class="field">
-      <label for="base-cv">Base CV (Markdown)</label>
-      <textarea id="base-cv" rows="8" placeholder="Paste your base CV in markdown format..."></textarea>
+      <label for="base-cv" data-i18n="cv_base">Base CV (Markdown)</label>
+      <textarea id="base-cv" rows="8" data-i18n-placeholder="cv_base_placeholder" placeholder="Paste your base CV in markdown format..."></textarea>
     </div>
     <div class="field">
-      <label for="base-cover">Base Cover Letter (Markdown)</label>
-      <textarea id="base-cover" rows="6" placeholder="Paste your base cover letter..."></textarea>
+      <label for="base-cover" data-i18n="carta_base">Base Cover Letter (Markdown)</label>
+      <textarea id="base-cover" rows="6" data-i18n-placeholder="carta_base_placeholder" placeholder="Paste your base cover letter..."></textarea>
     </div>
     <div class="field">
-      <label for="base-profile">Profile / Personal Data (Markdown)</label>
-      <div class="hint">Preencha seus dados. A IA usa esse texto para responder QUALQUER pergunta do formulário.</div>
+      <label for="base-profile" data-i18n="perfil_dados">Profile / Personal Data (Markdown)</label>
+      <div class="hint" data-i18n="perfil_dados_dica">Preencha seus dados. A IA usa esse texto para responder QUALQUER pergunta do formulário.</div>
       <textarea id="base-profile" rows="20"></textarea>
     </div>
   </div>
 
   <div class="actions">
-    <span class="saved" id="saved-msg">Settings saved!</span>
-    <button class="btn btn-primary" id="btn-save">Save Settings</button>
+    <span class="saved" id="saved-msg" data-i18n="configuracoes_salvas">Settings saved!</span>
+    <button class="btn btn-primary" id="btn-save" data-i18n="salvar_configuracoes">Save Settings</button>
   </div>
 
   <script src="options.js"></script>
