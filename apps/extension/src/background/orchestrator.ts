@@ -208,6 +208,10 @@ export async function startBot(userSettings: Settings): Promise<void> {
 export function stopBot(): void {
   stopRequested = true;
   state = 'idle';
+  // Reset in_progress jobs back to pending so they're not stuck
+  for (const job of jobs) {
+    if (job.status === 'in_progress') job.status = 'pending';
+  }
   // Close all worker tabs
   for (const worker of tabWorkers) {
     closeTab(worker.tabId).catch(() => {});
@@ -598,8 +602,7 @@ async function launchNextWorker(reuseTabId: number | null = null): Promise<void>
   if (!job) return;
 
   // Mark job so it's not picked by another worker
-  job.status = 'skipped'; // Temporarily mark as in-progress
-  job.skipReason = 'in_progress';
+  job.status = 'in_progress';
 
   const worker: TabWorker = {
     tabId: reuseTabId || -1,
@@ -830,7 +833,14 @@ async function prepareAndFillJob(worker: TabWorker): Promise<void> {
   await sendFillCommand(worker);
 }
 
-async function sendFillCommand(worker: TabWorker): Promise<void> {
+const MAX_FILL_DEPTH = 10;
+
+async function sendFillCommand(worker: TabWorker, depth = 0): Promise<void> {
+  if (depth >= MAX_FILL_DEPTH) {
+    addLog('warning', `[Tab ${tabWorkers.indexOf(worker) + 1}] Max fill depth reached (${MAX_FILL_DEPTH}), waiting for user`);
+    worker.state = 'waiting_review';
+    return;
+  }
   const stepResponse = await sendToTab(worker.tabId, {
     type: 'FILL_AND_ADVANCE',
     payload: worker.cvPayload
@@ -854,7 +864,7 @@ async function sendFillCommand(worker: TabWorker): Promise<void> {
   } else if (action === 'continued') {
     // Special pages auto-handled (privacy/consent) — fill next step
     await delay(1500);
-    await sendFillCommand(worker);
+    await sendFillCommand(worker, depth + 1);
   } else {
     // No response or unknown — wait and retry once
     await delay(3000);
@@ -899,6 +909,20 @@ export async function onTabSubmitted(senderTabId: number): Promise<void> {
   appliedCount++;
   await registry.markApplied(job.jobKey);
   addLog('info', `Applied successfully: ${job.title || job.url}`);
+
+  await finishWorkerAndReuseTab(worker);
+}
+
+export async function onTabSkipped(senderTabId: number): Promise<void> {
+  const worker = tabWorkers.find((w) => w.tabId === senderTabId);
+  if (!worker || worker.state === 'done') return;
+
+  const job = worker.job;
+  job.status = 'skipped';
+  job.skipReason = 'user_skipped';
+  skippedCount++;
+  await registry.markSkipped(job.jobKey, 'user_skipped');
+  addLog('info', `Skipped by user: ${job.title || job.url}`);
 
   await finishWorkerAndReuseTab(worker);
 }

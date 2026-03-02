@@ -5,7 +5,7 @@
  * All form answers are resolved by Claude using the user's baseProfile markdown.
  */
 
-import { Message } from '../types';
+import { Message, FloatingButtonSettings, DEFAULT_SETTINGS } from '../types';
 import {
   findFirst,
   findAll,
@@ -1627,11 +1627,17 @@ function hasCoverLetterField(): boolean {
 
 let pageAdvanceObserver: MutationObserver | null = null;
 
+let pendingDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
 function watchForPageAdvance(): void {
-  // Clean up previous observer if any
+  // Clean up previous observer and stale debounce timer
   if (pageAdvanceObserver) {
     pageAdvanceObserver.disconnect();
     pageAdvanceObserver = null;
+  }
+  if (pendingDebounceTimer) {
+    clearTimeout(pendingDebounceTimer);
+    pendingDebounceTimer = null;
   }
 
   const urlBefore = window.location.href;
@@ -1642,8 +1648,6 @@ function watchForPageAdvance(): void {
   const setupTime = Date.now();
   let domBaseline = 0; // captured after settling
   let baselineCaptured = false;
-  let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-
   const checkPageChange = () => {
     const urlAfter = window.location.href;
     const urlChanged = urlAfter !== urlBefore;
@@ -1702,8 +1706,8 @@ function watchForPageAdvance(): void {
 
   pageAdvanceObserver = new MutationObserver(() => {
     // Debounce: wait 800ms after last DOM mutation before checking
-    if (debounceTimer) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(checkPageChange, 800);
+    if (pendingDebounceTimer) clearTimeout(pendingDebounceTimer);
+    pendingDebounceTimer = setTimeout(checkPageChange, 800);
   });
 
   pageAdvanceObserver.observe(document.body, {
@@ -1850,8 +1854,6 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
 
 // ── Floating Button ──
 
-import { FloatingButtonSettings, DEFAULT_SETTINGS } from '../types';
-
 async function injectFloatingButton(): Promise<void> {
   const data = await chrome.storage.local.get('settings');
   const fb: FloatingButtonSettings = {
@@ -1960,22 +1962,22 @@ async function injectFloatingButton(): Promise<void> {
     const skipBtn = makeBtn('Skip ✕', '#6c757d', '#5a6268');
     skipBtn.addEventListener('click', () => {
       log('Floating: user clicked Skip');
-      chrome.runtime.sendMessage({ type: 'TAB_SUBMITTED' });
+      chrome.runtime.sendMessage({ type: 'TAB_SKIPPED' });
     });
     container.appendChild(skipBtn);
   }
 
   document.body.appendChild(container);
-
-  // Re-apply on settings change
-  chrome.storage.onChanged.addListener((changes) => {
-    if (changes.settings) {
-      const el = document.getElementById('iaa-floating-container');
-      if (el) el.remove();
-      injectFloatingButton();
-    }
-  });
 }
+
+// Register settings listener once (outside the function to avoid leaks)
+chrome.storage.onChanged.addListener((changes) => {
+  if (changes.settings) {
+    const el = document.getElementById('iaa-floating-container');
+    if (el) el.remove();
+    injectFloatingButton();
+  }
+});
 
 injectFloatingButton();
 

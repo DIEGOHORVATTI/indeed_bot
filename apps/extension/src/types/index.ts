@@ -6,7 +6,7 @@ export interface JobEntry {
   jobKey: string;
   title?: string;
   company?: string;
-  status: 'pending' | 'applied' | 'skipped' | 'failed';
+  status: 'pending' | 'in_progress' | 'applied' | 'skipped' | 'failed';
   skipReason?: string;
 }
 
@@ -100,7 +100,7 @@ export const DEFAULT_SETTINGS: Settings = {
 - Estado:
 - Nome completo da mãe:
 - Nome completo do pai:
-- Gênero:
+- Gênero: Masculino
 - Etnia/Raça (autodeclaração):
 
 # Links Profissionais
@@ -202,7 +202,8 @@ export type MessageType =
   | 'ADD_LOG'
   | 'SCRAPE_LINKEDIN'
   | 'STEP_ADVANCED'
-  | 'TAB_SUBMITTED';
+  | 'TAB_SUBMITTED'
+  | 'TAB_SKIPPED';
 
 export interface Message {
   type: MessageType;

@@ -13,7 +13,8 @@ import {
   addLog,
   getCache,
   onStepAdvanced,
-  onTabSubmitted
+  onTabSubmitted,
+  onTabSkipped
 } from './orchestrator';
 import { askClaudeForAnswer } from '../services/claude';
 import { setupNotificationListeners } from '../utils/notifications';
@@ -420,6 +421,13 @@ async function handleMessage(
     case 'TAB_SUBMITTED': {
       const submittedTabId = sender.tab?.id;
       if (submittedTabId) onTabSubmitted(submittedTabId);
+      sendResponse({ ok: true });
+      break;
+    }
+
+    case 'TAB_SKIPPED': {
+      const skippedTabId = sender.tab?.id;
+      if (skippedTabId) onTabSkipped(skippedTabId);
       sendResponse({ ok: true });
       break;
     }
