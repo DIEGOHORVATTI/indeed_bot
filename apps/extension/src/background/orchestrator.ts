@@ -73,6 +73,35 @@ let collectionAlreadyKnown = 0;
 
 // Worker pool
 let tabWorkers: TabWorker[] = [];
+
+// Tab URL monitor — detects submission when content script is destroyed by navigation
+let tabUrlListener: ((tabId: number, info: chrome.tabs.TabChangeInfo) => void) | null = null;
+
+function startTabUrlMonitor(): void {
+  stopTabUrlMonitor();
+  tabUrlListener = (tabId, info) => {
+    if (!info.url) return;
+    const worker = tabWorkers.find((w) => w.tabId === tabId && w.state === 'waiting_review');
+    if (!worker) return;
+
+    const url = info.url;
+    const isSubmission = URL_PATTERNS.submission.some((kw) => url.includes(kw));
+    const leftSmartApply = !url.includes('smartapply.indeed.com');
+
+    if (isSubmission || leftSmartApply) {
+      addLog('info', `[Tab ${tabWorkers.indexOf(worker) + 1}] Submission detected via URL monitor: ${url}`);
+      onTabSubmitted(tabId);
+    }
+  };
+  chrome.tabs.onUpdated.addListener(tabUrlListener);
+}
+
+function stopTabUrlMonitor(): void {
+  if (tabUrlListener) {
+    chrome.tabs.onUpdated.removeListener(tabUrlListener);
+    tabUrlListener = null;
+  }
+}
 let collectionTabId: number | null = null;
 let collectionExtraTabIds: number[] = [];
 
@@ -203,6 +232,7 @@ export async function startBot(userSettings: Settings): Promise<void> {
   await registry.load();
   await cache.load();
   await loadTemplates();
+  startTabUrlMonitor();
 
   addLog('info', 'Bot started');
   broadcastStatus();
@@ -213,6 +243,7 @@ export async function startBot(userSettings: Settings): Promise<void> {
     addLog('error', `Bot error: ${err}`);
   } finally {
     state = 'idle';
+    stopTabUrlMonitor();
     addLog('info', `Bot finished. Applied: ${appliedCount}, Skipped: ${skippedCount}`);
     broadcastStatus();
   }
@@ -221,6 +252,7 @@ export async function startBot(userSettings: Settings): Promise<void> {
 export function stopBot(): void {
   stopRequested = true;
   state = 'idle';
+  stopTabUrlMonitor();
   // Reset in_progress jobs back to pending so they're not stuck
   for (const job of jobs) {
     if (job.status === 'in_progress') job.status = 'pending';

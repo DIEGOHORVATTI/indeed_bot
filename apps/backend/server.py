@@ -12,11 +12,12 @@ import os
 import re
 import tempfile
 
-import anthropic
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel
+
+from apps.backend.ai_provider import get_provider
 
 app = FastAPI(title="Indeed Bot Backend")
 
@@ -27,8 +28,7 @@ app.add_middleware(
     allow_headers=["Content-Type"],
 )
 
-# Anthropic client — reads ANTHROPIC_API_KEY from env automatically
-client = anthropic.Anthropic()
+ai = get_provider()
 
 
 # ── Request / Response models ──
@@ -78,13 +78,8 @@ MODEL_SMART = os.getenv("ANTHROPIC_MODEL_SMART", "claude-opus-4-20250514")
 
 
 def _call_claude(prompt: str, max_tokens: int = 4096, model: str = MODEL_FAST) -> str:
-    """Call Claude via the Anthropic API."""
-    message = client.messages.create(
-        model=model,
-        max_tokens=max_tokens,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    return message.content[0].text.strip()
+    """Call Claude via the configured AI provider."""
+    return ai.complete(prompt, max_tokens=max_tokens, model=model)
 
 
 # ── Endpoints ──
