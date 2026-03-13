@@ -7,6 +7,8 @@ module.exports = {
     'content/indeed': './src/content/indeed.ts',
     'content/mainworld': './src/content/mainworld.ts',
     'content/smartapply': './src/content/smartapply.ts',
+    'content/linkedin': './src/content/linkedin.ts',
+    'content/generic-form': './src/content/generic-form.ts',
     'popup/popup': './src/popup/popup.ts',
     'options/options': './src/options/options.ts',
   },
@@ -31,6 +33,9 @@ module.exports = {
   },
   resolve: {
     extensions: ['.ts', '.js'],
+    alias: {
+      '@jobpilot/types': path.resolve(__dirname, '../../packages/types/src'),
+    },
   },
   plugins: [
     new CopyPlugin({

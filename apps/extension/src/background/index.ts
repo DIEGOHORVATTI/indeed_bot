@@ -18,9 +18,52 @@ import {
 } from './orchestrator';
 import { askClaudeForAnswer } from '../services/claude';
 import { setupNotificationListeners } from '../utils/notifications';
+import { initBridge, onCommand, sendLog } from './ws-bridge';
+import type { BackendMessage } from './ws-bridge';
 
 // Initialize notification listeners (guarded for availability)
 setupNotificationListeners();
+
+(async () => {
+  const data = await chrome.storage.local.get('settings');
+  const backendUrl = data.settings?.backendUrl || 'http://localhost:8004';
+  initBridge(backendUrl);
+})();
+
+onCommand((msg: BackendMessage) => {
+  switch (msg.type) {
+    case 'cmd:start': {
+      getSettings().then((settings) => {
+        if (msg.payload?.searchUrls?.length) {
+          settings.searchUrls = msg.payload.searchUrls;
+        }
+        if (msg.payload?.maxApplies != null) {
+          settings.maxApplies = msg.payload.maxApplies;
+        }
+        startBot(settings);
+      });
+      break;
+    }
+    case 'cmd:stop':
+      stopBot();
+      break;
+    case 'cmd:pause':
+      pauseBot();
+      break;
+    case 'cmd:resume':
+      resumeBot();
+      break;
+    case 'cmd:apply':
+      sendLog('info', `Recebido comando de aplicação: ${msg.payload?.title}`);
+      break;
+  }
+});
+
+chrome.storage.onChanged.addListener((changes) => {
+  if (changes.settings?.newValue?.backendUrl) {
+    initBridge(changes.settings.newValue.backendUrl);
+  }
+});
 
 // ── Settings Management ──
 
@@ -51,7 +94,33 @@ async function handleMessage(
     case 'START_BOT': {
       const settings = await getSettings();
       if (!settings.searchUrls.length) {
-        sendResponse({ error: 'No search URLs configured. Go to Options to set up.' });
+        try {
+          const res = await fetch(`${settings.backendUrl}/api/settings/searches`);
+          const data = await res.json();
+          if (data.value) {
+            const parsed = JSON.parse(data.value);
+            if (parsed.searches?.length) {
+              settings.searchUrls = parsed.searches.map((s: any) => {
+                const params = new URLSearchParams({
+                  q: s.query,
+                  l: s.location || '',
+                  fromage: String(s.hoursOld ? Math.ceil(s.hoursOld / 24) : 3),
+                });
+                const domain = (s.country || '').toLowerCase() === 'brazil' ? 'br.indeed.com' : 'indeed.com';
+                return `https://${domain}/jobs?${params}`;
+              });
+            }
+            if (parsed.scoreThreshold != null) {
+              settings.maxApplies = parsed.maxApplies || settings.maxApplies;
+            }
+          }
+        } catch (err) {
+          sendResponse({ error: `Não foi possível buscar configurações do backend: ${err}` });
+          return;
+        }
+      }
+      if (!settings.searchUrls.length) {
+        sendResponse({ error: 'Nenhuma busca configurada. Configure pelo Dashboard.' });
         return;
       }
       startBot(settings);

@@ -1,0 +1,29 @@
+{
+  "name": "@jobpilot/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "build": "tsc",
+    "start": "bun src/index.ts",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@elysiajs/cors": "^1.2.0",
+    "@elysiajs/openapi": "^1.4.14",
+    "@jobpilot/ai": "workspace:*",
+    "@jobpilot/config": "workspace:*",
+    "@jobpilot/db": "workspace:*",
+    "@jobpilot/pdf": "workspace:*",
+    "@jobpilot/types": "workspace:*",
+    "bullmq": "^5.34.0",
+    "elysia": "^1.2.0",
+    "ioredis": "^5.4.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.10",
+    "@types/node": "22",
+    "typescript": "^5.7.0"
+  }
+}

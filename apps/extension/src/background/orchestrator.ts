@@ -23,6 +23,15 @@ import {
   getGroupId
 } from './tab-group';
 import { TIMING, LIMITS, URL_PATTERNS } from '../utils/constants';
+import {
+  sendStatus,
+  sendScreenshot,
+  sendJobDiscovered,
+  sendJobApplied,
+  sendJobFailed,
+  sendLog as bridgeLog,
+  isConnected
+} from './ws-bridge';
 
 const registry = new JobRegistry();
 const cache = new AnswerCache();
@@ -125,11 +134,44 @@ export function addLog(level: LogEntry['level'], message: string): void {
   log.push({ timestamp: Date.now(), level, message });
   if (log.length > 200) log = log.slice(-100);
   broadcastStatus();
+  if (isConnected()) {
+    bridgeLog(level, message);
+  }
 }
 
 function broadcastStatus(): void {
   const status = getStatus();
   chrome.runtime.sendMessage({ type: 'STATUS_UPDATE', payload: status }).catch(() => {});
+  if (isConnected()) {
+    sendStatus(status);
+  }
+}
+
+async function reportScreenshot(tabId: number): Promise<void> {
+  if (!isConnected()) return;
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    const pageContextResult = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => {
+        const title = document.title || '';
+        const heading = document.querySelector('h1')?.textContent?.trim() || '';
+        const metaDescription = (
+          document.querySelector('meta[name="description"]') as HTMLMetaElement | null
+        )?.content;
+        return [title, heading, metaDescription || ''].filter(Boolean).join(' | ');
+      }
+    });
+    const screenshot = await chrome.tabs.captureVisibleTab(tab.windowId, {
+      format: 'jpeg',
+      quality: 60
+    });
+    sendScreenshot({
+      screenshot,
+      url: tab.url || '',
+      pageContext: String(pageContextResult?.[0]?.result || '')
+    });
+  } catch {}
 }
 
 export function getStatus(): BotStatus {
@@ -290,7 +332,7 @@ async function collectSinglePage(
   pageUrl: string,
   pageNum: number
 ): Promise<{
-  links: { url: string; jobKey: string }[];
+  links: { url: string; jobKey: string; title?: string; company?: string; location?: string; salary?: string }[];
   stats?: { totalCards: number; externalApply: number };
   jobCount?: number;
   error?: string;
@@ -322,7 +364,7 @@ async function collectSinglePage(
 
   // Collect links
   const response = await sendToTab(tabId, { type: 'COLLECT_LINKS' });
-  const links: { url: string; jobKey: string }[] = response?.payload || [];
+  const links: { url: string; jobKey: string; title?: string; company?: string; location?: string; salary?: string }[] = response?.payload || [];
   const stats = response?.stats;
 
   console.log(`[collect] Tab ${tabId} page ${pageNum}: got ${links.length} links`);
@@ -395,6 +437,7 @@ async function collectAllJobs(): Promise<void> {
       let pageNew = 0;
       let pageDupes = 0;
       let pageKnown = 0;
+      const discoveredJobs: { url: string; jobKey: string; title?: string; company?: string; location?: string; salary?: string; source: string }[] = [];
       for (const link of firstResult.links) {
         // Stop adding jobs once we have enough for maxApplies
         if (
@@ -414,7 +457,8 @@ async function collectAllJobs(): Promise<void> {
           collectionAlreadyKnown++;
           continue;
         }
-        jobs.push({ url: link.url, jobKey: link.jobKey, status: 'pending' });
+        jobs.push({ url: link.url, jobKey: link.jobKey, title: link.title, status: 'pending' });
+        discoveredJobs.push({ url: link.url, jobKey: link.jobKey, title: link.title, company: link.company, location: link.location, salary: link.salary, source: 'indeed' });
         pageNew++;
       }
       const parts = [`+${pageNew} new`];
@@ -424,6 +468,10 @@ async function collectAllJobs(): Promise<void> {
         parts.push(`${firstResult.stats.externalApply} external`);
       }
       addLog('info', `Page 1: ${parts.join(', ')}`);
+
+      if (isConnected() && discoveredJobs.length > 0) {
+        sendJobDiscovered(discoveredJobs);
+      }
     } else {
       consecutiveEmptyPages++;
       const statsInfo = firstResult.stats
@@ -525,6 +573,7 @@ async function collectAllJobs(): Promise<void> {
         let pageNew = 0;
         let pageDupes = 0;
         let pageKnown = 0;
+        const discoveredJobs: { url: string; jobKey: string; title?: string; company?: string; location?: string; salary?: string; source: string }[] = [];
         for (const link of result.links) {
           if (
             settings.maxApplies > 0 &&
@@ -543,7 +592,8 @@ async function collectAllJobs(): Promise<void> {
             collectionAlreadyKnown++;
             continue;
           }
-          jobs.push({ url: link.url, jobKey: link.jobKey, status: 'pending' });
+          jobs.push({ url: link.url, jobKey: link.jobKey, title: link.title, status: 'pending' });
+          discoveredJobs.push({ url: link.url, jobKey: link.jobKey, title: link.title, company: link.company, location: link.location, salary: link.salary, source: 'indeed' });
           pageNew++;
         }
         const totalNew = jobs.length - batchStartIndex;
@@ -555,6 +605,10 @@ async function collectAllJobs(): Promise<void> {
         const totalInfo =
           estimatedTotalJobs > 0 ? ` — ${totalNew}/${estimatedTotalJobs}` : ` — ${totalNew} total`;
         addLog('info', `Page ${pn}${pageInfo}: ${parts.join(', ')}${totalInfo}`);
+
+        if (isConnected() && discoveredJobs.length > 0) {
+          sendJobDiscovered(discoveredJobs);
+        }
       }
 
       broadcastStatus();
@@ -671,6 +725,9 @@ async function launchNextWorker(reuseTabId: number | null = null): Promise<void>
     addLog('error', `Worker error for ${job.title || job.url}: ${err}`);
     job.status = 'failed';
     failedCount++;
+    if (isConnected()) {
+      sendJobFailed(job.jobKey, String(err));
+    }
     await finishWorkerAndReuseTab(worker);
   }
 }
@@ -950,6 +1007,7 @@ export async function onStepAdvanced(senderTabId: number): Promise<void> {
   if (!worker || worker.state === 'done') return;
 
   addLog('info', `[Tab ${tabWorkers.indexOf(worker) + 1}] User advanced — filling next step`);
+  reportScreenshot(senderTabId).catch(() => {});
   worker.state = 'filling';
   broadcastStatus();
 
@@ -966,6 +1024,10 @@ export async function onTabSubmitted(senderTabId: number): Promise<void> {
   appliedCount++;
   await registry.markApplied(job.jobKey);
   addLog('info', `Applied successfully: ${job.title || job.url}`);
+  if (isConnected()) {
+    sendJobApplied(job.jobKey, job.title || '', job.company || '');
+  }
+  reportScreenshot(senderTabId).catch(() => {});
 
   await finishWorkerAndReuseTab(worker);
 }

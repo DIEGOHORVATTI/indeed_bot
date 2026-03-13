@@ -6,8 +6,10 @@ Set AI_PROVIDER env var to "api" or "cli" (default: "cli").
 
 from __future__ import annotations
 
+import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 from typing import Protocol
@@ -77,21 +79,36 @@ class ClaudeCLI:
             "-p",
             prompt,
             "--no-session-persistence",
+            "--output-format", "json",
         ])
         if model:
             cmd.extend(["--model", model])
         if max_tokens:
             cmd.extend(["--max-budget-usd", "1"])
 
+        # Strip CLAUDECODE env var so nested sessions are allowed
+        env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
+
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
-            timeout=120,
+            timeout=300,
+            env=env,
+            cwd="/tmp",  # Avoid loading project CLAUDE.md
         )
         if result.returncode != 0:
             raise RuntimeError(f"claude CLI failed (exit {result.returncode}): {result.stderr}")
-        return result.stdout.strip()
+
+        # --output-format json wraps the answer in {"result": "..."}
+        stdout = result.stdout.strip()
+        try:
+            wrapper = json.loads(stdout)
+            if isinstance(wrapper, dict) and "result" in wrapper:
+                return wrapper["result"].strip()
+        except (json.JSONDecodeError, AttributeError):
+            pass
+        return stdout
 
 
 # ── Factory ──
@@ -111,3 +128,18 @@ def get_provider() -> AIProvider:
             logger.info("AI provider: Claude CLI")
             _provider = ClaudeCLI()
     return _provider
+
+
+def extract_json(text: str) -> dict:
+    """Extract a JSON object from AI output that may contain markdown fences."""
+    text = text.strip()
+    # Remove ```json ... ``` fences
+    text = re.sub(r"^```(?:json)?\s*\n?", "", text)
+    text = re.sub(r"\n?```\s*$", "", text)
+    text = text.strip()
+    # Find first { ... last }
+    start = text.find("{")
+    end = text.rfind("}") + 1
+    if start >= 0 and end > start:
+        return json.loads(text[start:end])
+    raise json.JSONDecodeError("No JSON object found", text, 0)

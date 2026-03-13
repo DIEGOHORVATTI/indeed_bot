@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Indeed Auto Apply",
+  "name": "JobPilot",
   "version": "0.3.18",
-  "description": "Auto-apply to Indeed jobs with AI-tailored CV and smart form filling",
+  "description": "Auto-apply to jobs across all platforms with AI-tailored CV and smart form filling",
   "permissions": [
     "tabs",
     "tabGroups",
@@ -13,9 +13,7 @@
     "scripting"
   ],
   "host_permissions": [
-    "*://*.indeed.com/*",
-    "*://*.linkedin.com/*",
-    "http://localhost:*/*"
+    "<all_urls>"
   ],
   "background": {
     "service_worker": "background.js"
@@ -53,6 +51,23 @@
       ],
       "run_at": "document_idle",
       "all_frames": true
+    },
+    {
+      "matches": ["*://*.linkedin.com/*"],
+      "exclude_matches": ["*://*.linkedin.com/messaging/*"],
+      "js": ["content/linkedin.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["<all_urls>"],
+      "exclude_matches": [
+        "*://*.indeed.com/*",
+        "*://smartapply.indeed.com/*",
+        "*://*.linkedin.com/*",
+        "*://chrome.google.com/*"
+      ],
+      "js": ["content/generic-form.js"],
+      "run_at": "document_idle"
     }
   ],
   "action": {

@@ -1,0 +1,30 @@
+{
+  "name": "@jobpilot/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@jobpilot/ai": "workspace:*",
+    "@jobpilot/anti-detection": "workspace:*",
+    "@jobpilot/config": "workspace:*",
+    "@jobpilot/db": "workspace:*",
+    "@jobpilot/pdf": "workspace:*",
+    "@jobpilot/types": "workspace:*",
+    "bullmq": "^5.34.0",
+    "cheerio": "^1.0.0",
+    "ioredis": "^5.4.0",
+    "playwright-extra": "^4.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
+  },
+  "devDependencies": {
+    "@types/node": "22",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

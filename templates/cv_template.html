@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <style>
+    @page {
+      size: A4;
+      margin: 0;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Arial, Helvetica, sans-serif;
+      font-size: 9.5pt;
+      color: #2d2d2d;
+      line-height: 1.45;
+      background: #fff;
+    }
+
+    /* ── Banner Header (edge-to-edge) ── */
+    .banner {
+      background: #16213e;
+      padding: 24px 34px 18px 34px;
+      color: #fff;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .banner::before {
+      content: '';
+      position: absolute;
+      top: -50px;
+      right: -30px;
+      width: 180px;
+      height: 180px;
+      border-radius: 50%;
+      background: rgba(233, 69, 96, 0.15);
+    }
+
+    .banner::after {
+      content: '';
+      position: absolute;
+      bottom: -70px;
+      left: -40px;
+      width: 240px;
+      height: 240px;
+      border-radius: 50%;
+      background: rgba(233, 69, 96, 0.08);
+    }
+
+    .banner h1 {
+      font-size: 22pt;
+      font-weight: 800;
+      letter-spacing: 3px;
+      margin-bottom: 2px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .banner .objective {
+      font-size: 11pt;
+      color: #e94560;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .banner .contact {
+      font-size: 8.5pt;
+      color: rgba(255, 255, 255, 0.75);
+      position: relative;
+      z-index: 1;
+    }
+
+    .banner .contact a {
+      color: rgba(255, 255, 255, 0.9);
+      text-decoration: none;
+      font-weight: 600;
+    }
+
+    .banner .contact .sep {
+      margin: 0 6px;
+      color: rgba(255, 255, 255, 0.3);
+    }
+
+    /* ── Accent bar (edge-to-edge) ── */
+    .accent-bar {
+      height: 3px;
+      background: #e94560;
+    }
+
+    /* ── Main content (with A4 margins via padding) ── */
+    .main {
+      padding: 10px 34px 20px 34px;
+    }
+
+    /* ── Section headings ── */
+    h2 {
+      font-size: 9.5pt;
+      font-weight: 700;
+      color: #16213e;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      margin: 10px 0 4px 0;
+      padding-bottom: 3px;
+      border-bottom: 2px solid #e8e8e8;
+    }
+
+    /* ── Summary ── */
+    .summary {
+      font-size: 9pt;
+      color: #444;
+      margin-bottom: 2px;
+      line-height: 1.5;
+    }
+
+    /* ── Keywords badges ── */
+    .keywords {
+      margin: 4px 0 4px 0;
+    }
+
+    .keywords .badge {
+      display: inline-block;
+      background: #16213e;
+      border-radius: 3px;
+      padding: 2px 8px;
+      font-size: 7.5pt;
+      color: #fff;
+      margin: 1.5px 2px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+    }
+
+    /* ── Skills grid ── */
+    .skills-grid {
+      font-size: 8.5pt;
+    }
+
+    .skills-grid .row {
+      margin-bottom: 1.5px;
+      padding: 1px 0;
+    }
+
+    .skills-grid .label {
+      font-weight: 700;
+      color: #16213e;
+    }
+
+    /* ── Experience ── */
+    .job {
+      margin-bottom: 7px;
+    }
+
+    .job-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+
+    .job-title {
+      font-weight: 700;
+      font-size: 9.5pt;
+      color: #16213e;
+    }
+
+    .job-date {
+      font-size: 8pt;
+      color: #888;
+      white-space: nowrap;
+      font-style: italic;
+    }
+
+    .job-company {
+      font-size: 8.5pt;
+      color: #666;
+      margin-bottom: 2px;
+    }
+
+    .job ul {
+      margin-left: 14px;
+      font-size: 8.5pt;
+      color: #333;
+    }
+
+    .job ul li {
+      margin-bottom: 1px;
+      line-height: 1.4;
+    }
+
+    /* ── Education & Certs ── */
+    .edu {
+      font-size: 8.5pt;
+      margin-bottom: 2px;
+    }
+
+    .edu strong {
+      font-weight: 700;
+      color: #16213e;
+    }
+
+    .certs {
+      font-size: 8.5pt;
+    }
+
+    .certs ul {
+      margin-left: 14px;
+    }
+
+    .certs li {
+      margin-bottom: 1px;
+    }
+
+    /* ── Languages ── */
+    .languages-section {
+      font-size: 8.5pt;
+    }
+
+    /* ── Additional ── */
+    .additional {
+      font-size: 8.5pt;
+      color: #555;
+      margin-top: 2px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="banner">
+    <h1>{{profile_name}}</h1>
+    <div class="objective">{{objective}}</div>
+    <div class="contact">
+      {{profile_contact}}
+    </div>
+  </div>
+  <div class="accent-bar"></div>
+
+  <div class="main">
+    <h2>{{section_summary}}</h2>
+    <p class="summary">{{summary}}</p>
+    <div class="keywords">{{keywords}}</div>
+
+    <h2>{{section_skills}}</h2>
+    <div class="skills-grid">
+      {{skills}}
+    </div>
+
+    <h2>{{section_experience}}</h2>
+    {{experience}}
+
+    <h2>{{section_education}}</h2>
+    <div class="edu">
+      {{education}}
+    </div>
+
+    <h2>{{section_certifications}}</h2>
+    <div class="certs">
+      {{certifications}}
+    </div>
+
+    <h2>{{section_languages}}</h2>
+    <div class="languages-section">
+      {{languages}}
+    </div>
+
+    {{additional_info}}
+  </div>
+
+</body>
+
+</html>

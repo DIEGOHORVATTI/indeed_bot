@@ -1,0 +1,11 @@
+score_threshold: 40
+max_apply_per_hour: 8
+max_apply_per_day: 50
+
+searches:
+  - query: "software engineer"
+    location: "São Paulo, SP"
+    sites: [indeed, linkedin, glassdoor, google]
+    hours_old: 72
+    results_wanted: 30
+    country: Brazil

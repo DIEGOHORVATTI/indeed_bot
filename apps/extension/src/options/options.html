@@ -2,26 +2,19 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title data-i18n="titulo_extensao">Indeed Auto Apply — Settings</title>
+  <title>JobPilot — Configurações</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      max-width: 700px;
+      max-width: 500px;
       margin: 0 auto;
       padding: 40px 20px;
       color: #2d2d2d;
       background: #f8f9fa;
     }
-    h1 {
-      font-size: 24px;
-      color: #16213e;
-      margin-bottom: 8px;
-    }
-    .subtitle {
-      color: #6c757d;
-      margin-bottom: 32px;
-    }
+    h1 { font-size: 24px; color: #16213e; margin-bottom: 8px; }
+    .subtitle { color: #6c757d; margin-bottom: 32px; }
     .section {
       background: #fff;
       border-radius: 8px;
@@ -36,9 +29,7 @@
       padding-bottom: 8px;
       border-bottom: 2px solid #e9ecef;
     }
-    .field {
-      margin-bottom: 16px;
-    }
+    .field { margin-bottom: 16px; }
     .field label {
       display: block;
       font-size: 13px;
@@ -46,30 +37,34 @@
       color: #495057;
       margin-bottom: 4px;
     }
-    .field .hint {
-      font-size: 11px;
-      color: #6c757d;
-      margin-bottom: 4px;
-    }
-    .field input[type="text"],
-    .field input[type="number"],
-    .field select,
-    .field textarea {
+    .field .hint { font-size: 11px; color: #6c757d; margin-top: 4px; }
+    .field input[type="text"] {
       width: 100%;
       padding: 8px 12px;
       border: 1px solid #ced4da;
       border-radius: 6px;
       font-size: 13px;
-      font-family: inherit;
+      font-family: 'SF Mono', Consolas, monospace;
     }
-    .field textarea { min-height: 100px; resize: vertical; font-family: 'SF Mono', Consolas, monospace; font-size: 12px; }
-    .field input:focus, .field textarea:focus, .field select:focus {
+    .field input:focus {
       outline: none;
       border-color: #16213e;
       box-shadow: 0 0 0 2px rgba(22, 33, 62, 0.15);
     }
-    .row { display: flex; gap: 12px; }
-    .row .field { flex: 1; }
+    .status-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 6px;
+    }
+    .status-dot.connected { background: #22C55E; }
+    .status-dot.disconnected { background: #FF5630; }
+    .connection-status {
+      font-size: 12px;
+      color: #6c757d;
+      margin-top: 8px;
+    }
     .btn {
       padding: 10px 24px;
       border: none;
@@ -80,26 +75,11 @@
     }
     .btn-primary { background: #16213e; color: #fff; }
     .btn-primary:hover { background: #1a2a4a; }
-    .btn-secondary { background: #e9ecef; color: #16213e; }
-    .btn-secondary:hover { background: #dee2e6; }
-    .import-row {
-      display: flex;
-      gap: 8px;
-      align-items: flex-end;
-      margin-bottom: 16px;
-    }
-    .import-row .field { flex: 1; margin-bottom: 0; }
-    .import-status {
-      font-size: 12px;
-      margin-top: 4px;
-      min-height: 16px;
-    }
-    .import-status.error { color: #dc3545; }
-    .import-status.success { color: #198754; }
     .actions {
       display: flex;
       gap: 12px;
       justify-content: flex-end;
+      align-items: center;
       margin-top: 24px;
     }
     .saved {
@@ -109,214 +89,44 @@
       transition: opacity 0.3s;
     }
     .saved.show { opacity: 1; }
-    .toggle {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .toggle input[type="checkbox"] {
-      width: 18px;
-      height: 18px;
+    .info-box {
+      background: #e7f5ff;
+      border-left: 3px solid #339af0;
+      padding: 12px 16px;
+      border-radius: 4px;
+      font-size: 12px;
+      color: #1c7ed6;
+      line-height: 1.5;
     }
   </style>
 </head>
 <body>
-  <h1 data-i18n="titulo_extensao">Indeed Auto Apply</h1>
-  <p class="subtitle" data-i18n="configurar_bot">Configure your bot settings</p>
+  <h1>JobPilot</h1>
+  <p class="subtitle">Configuração da extensão</p>
 
   <div class="section">
-    <h2 data-i18n="configuracao_rapida">Quick Setup</h2>
-    <div class="hint" style="margin-bottom: 12px" data-i18n="importar_linkedin_dica">Import your LinkedIn profile to auto-fill CV, cover letter, and personal data.</div>
-    <div class="import-row">
-      <div class="field">
-        <label for="linkedin-username" data-i18n="linkedin_usuario_ou_url">LinkedIn username or URL</label>
-        <input type="text" id="linkedin-username" data-i18n-placeholder="linkedin_placeholder" placeholder="diego-horvatti or https://linkedin.com/in/...">
-      </div>
-      <button class="btn btn-secondary" id="btn-import-linkedin" data-i18n="importar">Import</button>
-    </div>
-    <div class="import-status" id="import-status"></div>
-  </div>
-
-  <div class="section">
-    <h2 data-i18n="busca">Search</h2>
+    <h2>Conexão com o Backend</h2>
     <div class="field">
-      <label for="search-urls" data-i18n="urls_busca">Search URLs (one per line)</label>
-      <div class="hint" data-i18n="urls_busca_dica">Go to Indeed, configure your filters, copy the URL</div>
-      <textarea id="search-urls" rows="4" data-i18n-placeholder="urls_busca_placeholder" placeholder="https://br.indeed.com/jobs?q=full+stack&l=..."></textarea>
-    </div>
-    <div class="row">
-      <div class="field">
-        <label for="language" data-i18n="idioma">Language</label>
-        <select id="language">
-          <option value="br" data-i18n="idioma_br">Brasil (br)</option>
-          <option value="us" data-i18n="idioma_us">USA (us)</option>
-          <option value="uk" data-i18n="idioma_uk">UK (uk)</option>
-          <option value="fr" data-i18n="idioma_fr">France (fr)</option>
-          <option value="de" data-i18n="idioma_de">Germany (de)</option>
-          <option value="es" data-i18n="idioma_es">Spain (es)</option>
-        </select>
-      </div>
-      <div class="field">
-        <label for="max-applies" data-i18n="max_candidaturas">Max Applies</label>
-        <input type="number" id="max-applies" min="0" value="0">
-        <div class="hint" data-i18n="ilimitado">0 = unlimited</div>
-      </div>
-    </div>
-    <div class="row">
-      <div class="field">
-        <label for="scraping-tabs" data-i18n="abas_coleta">Scraping Tabs</label>
-        <input type="number" id="scraping-tabs" min="1" max="5" value="1">
-        <div class="hint" data-i18n="abas_coleta_dica">Number of parallel tabs for job collection (1-5). Applications always use a single tab.</div>
-      </div>
-    </div>
-    <div class="field">
-      <div class="toggle">
-        <input type="checkbox" id="available-today" checked>
-        <label for="available-today" data-i18n="disponivel_hoje">Available to start working today</label>
-      </div>
-      <div class="hint" data-i18n="disponivel_hoje_dica">When checked, date fields asking "when can you start?" will be filled with today's date</div>
-    </div>
-  </div>
-
-  <div class="section">
-    <h2 data-i18n="perfil">Profile</h2>
-    <div class="row">
-      <div class="field">
-        <label for="profile-name" data-i18n="nome">Name</label>
-        <input type="text" id="profile-name">
-      </div>
-      <div class="field">
-        <label for="profile-email" data-i18n="email">Email</label>
-        <input type="text" id="profile-email">
-      </div>
-    </div>
-    <div class="field">
-      <label for="profile-phone" data-i18n="telefone">Phone</label>
-      <input type="text" id="profile-phone">
-    </div>
-    <div class="row">
-      <div class="field" style="flex:2">
-        <label for="profile-street" data-i18n="rua_numero">Rua + número</label>
-        <input type="text" id="profile-street" data-i18n-placeholder="rua_placeholder" placeholder="Rua Exemplo, 123">
-      </div>
-      <div class="field">
-        <label for="profile-neighborhood" data-i18n="bairro">Bairro</label>
-        <input type="text" id="profile-neighborhood">
-      </div>
-    </div>
-    <div class="row">
-      <div class="field">
-        <label for="profile-city" data-i18n="cidade">Cidade</label>
-        <input type="text" id="profile-city">
-      </div>
-      <div class="field">
-        <label for="profile-state" data-i18n="estado">Estado</label>
-        <input type="text" id="profile-state">
-      </div>
-      <div class="field">
-        <label for="profile-cep" data-i18n="cep">CEP</label>
-        <input type="text" id="profile-cep" data-i18n-placeholder="cep_placeholder" placeholder="00000-000">
-      </div>
-    </div>
-    <div class="row">
-      <div class="field">
-        <label for="profile-linkedin">LinkedIn</label>
-        <input type="text" id="profile-linkedin">
-      </div>
-      <div class="field">
-        <label for="profile-github">GitHub</label>
-        <input type="text" id="profile-github">
-      </div>
-    </div>
-    <div class="row">
-      <div class="field">
-        <label for="profile-instagram">Instagram</label>
-        <input type="text" id="profile-instagram">
-      </div>
-      <div class="field">
-        <label for="profile-portfolio">Portfolio</label>
-        <input type="text" id="profile-portfolio">
+      <label for="backend-url">URL do Backend</label>
+      <input type="text" id="backend-url" placeholder="http://localhost:8004">
+      <div class="hint">Endereço da API do JobPilot. A extensão conecta via WebSocket para receber comandos.</div>
+      <div class="connection-status" id="connection-status">
+        <span class="status-dot disconnected" id="status-dot"></span>
+        <span id="status-text">Verificando conexão...</span>
       </div>
     </div>
   </div>
 
   <div class="section">
-    <h2 data-i18n="botao_flutuante">Floating Button</h2>
-    <div class="hint" style="margin-bottom: 12px" data-i18n="botao_flutuante_dica">A floating "Next" button injected on SmartApply pages so you can advance the wizard without scrolling to the native button.</div>
-    <div class="field">
-      <div class="toggle">
-        <input type="checkbox" id="fb-enabled" checked>
-        <label for="fb-enabled" data-i18n="habilitar_botao_flutuante">Enable floating button</label>
-      </div>
-    </div>
-    <div class="row">
-      <div class="field">
-        <label for="fb-position" data-i18n="posicao">Position</label>
-        <select id="fb-position">
-          <option value="top-left" data-i18n="pos_superior_esquerda">Top Left</option>
-          <option value="top-right" data-i18n="pos_superior_direita">Top Right</option>
-          <option value="bottom-left" data-i18n="pos_inferior_esquerda">Bottom Left</option>
-          <option value="bottom-right" selected data-i18n="pos_inferior_direita">Bottom Right</option>
-        </select>
-      </div>
-      <div class="field">
-        <label for="fb-style" data-i18n="posicao_css">CSS Position</label>
-        <select id="fb-style">
-          <option value="fixed" data-i18n="css_fixo">Fixed (stays on screen)</option>
-          <option value="sticky" data-i18n="css_sticky">Sticky (scrolls then sticks)</option>
-          <option value="absolute" data-i18n="css_absoluto">Absolute (relative to page)</option>
-        </select>
-      </div>
-    </div>
-    <div class="row">
-      <div class="field">
-        <label for="fb-size" data-i18n="tamanho_botao">Button Size</label>
-        <select id="fb-size">
-          <option value="small" data-i18n="tam_pequeno">Small</option>
-          <option value="medium" selected data-i18n="tam_medio">Medium</option>
-          <option value="large" data-i18n="tam_grande">Large</option>
-        </select>
-      </div>
-      <div class="field">
-        <label for="fb-opacity" data-i18n="opacidade">Opacity</label>
-        <input type="number" id="fb-opacity" min="0.1" max="1" step="0.1" value="0.9">
-        <div class="hint" data-i18n="opacidade_dica">0.1 (transparent) — 1.0 (opaque)</div>
-      </div>
-    </div>
-    <div class="field">
-      <div class="toggle">
-        <input type="checkbox" id="fb-show-skip" checked>
-        <label for="fb-show-skip" data-i18n="mostrar_botao_pular">Show "Skip" button alongside "Next"</label>
-      </div>
-    </div>
-  </div>
-
-  <div class="section">
-    <h2 data-i18n="personalizacao">Personalization</h2>
-    <div class="field">
-      <div class="toggle">
-        <input type="checkbox" id="personalization-enabled" checked>
-        <label for="personalization-enabled" data-i18n="gerar_cv_ia">Generate AI-tailored CV and cover letter per job</label>
-      </div>
-    </div>
-    <div class="field">
-      <label for="base-cv" data-i18n="cv_base">Base CV (Markdown)</label>
-      <textarea id="base-cv" rows="8" data-i18n-placeholder="cv_base_placeholder" placeholder="Paste your base CV in markdown format..."></textarea>
-    </div>
-    <div class="field">
-      <label for="base-cover" data-i18n="carta_base">Base Cover Letter (Markdown)</label>
-      <textarea id="base-cover" rows="6" data-i18n-placeholder="carta_base_placeholder" placeholder="Paste your base cover letter..."></textarea>
-    </div>
-    <div class="field">
-      <label for="base-profile" data-i18n="perfil_dados">Profile / Personal Data (Markdown)</label>
-      <div class="hint" data-i18n="perfil_dados_dica">Preencha seus dados. A IA usa esse texto para responder QUALQUER pergunta do formulário.</div>
-      <textarea id="base-profile" rows="20"></textarea>
+    <div class="info-box">
+      Todas as outras configurações (buscas, perfil, personalização) são gerenciadas pelo
+      <strong>Dashboard</strong> em <a href="http://localhost:8005" target="_blank">localhost:8005</a>.
     </div>
   </div>
 
   <div class="actions">
-    <span class="saved" id="saved-msg" data-i18n="configuracoes_salvas">Settings saved!</span>
-    <button class="btn btn-primary" id="btn-save" data-i18n="salvar_configuracoes">Save Settings</button>
+    <span class="saved" id="saved-msg">Salvo!</span>
+    <button class="btn btn-primary" id="btn-save">Salvar</button>
   </div>
 
   <script src="options.js"></script>

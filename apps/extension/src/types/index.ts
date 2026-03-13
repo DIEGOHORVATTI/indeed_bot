@@ -62,7 +62,7 @@ export interface Settings {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
-  backendUrl: 'http://localhost:3000',
+  backendUrl: 'http://localhost:8004',
   language: 'br',
   searchUrls: [],
   maxApplies: 0,

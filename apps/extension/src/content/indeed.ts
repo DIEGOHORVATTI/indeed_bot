@@ -35,14 +35,23 @@ function extractJobKey(url: string): string | null {
 
 // ── Job Link Collection ──
 
+interface CollectedJob {
+  url: string;
+  jobKey: string;
+  title: string;
+  company: string;
+  location: string;
+  salary: string;
+}
+
 interface CollectResult {
-  links: { url: string; jobKey: string }[];
+  links: CollectedJob[];
   totalCards: number;
   externalApply: number;
 }
 
 function collectIndeedApplyLinks(): CollectResult {
-  const links: { url: string; jobKey: string }[] = [];
+  const links: CollectedJob[] = [];
   const cards = document.querySelectorAll(TESTIDS.jobCard);
 
   console.log(
@@ -77,12 +86,25 @@ function collectIndeedApplyLinks(): CollectResult {
       continue;
     }
 
-    const jobKey = extractJobKey(jobUrl);
-    if (jobKey) {
-      links.push({ url: jobUrl, jobKey });
-    } else {
+    const jobKey = linkEl.getAttribute('data-jk') || extractJobKey(jobUrl);
+    if (!jobKey) {
       noKey++;
+      continue;
     }
+
+    const titleSpan = card.querySelector('h2.jobTitle span[title]') || card.querySelector('h2.jobTitle span');
+    const companyEl = card.querySelector('[data-testid="company-name"]');
+    const locationEl = card.querySelector('[data-testid="text-location"]');
+    const salaryEl = card.querySelector('.salary-snippet-container span');
+
+    links.push({
+      url: jobUrl,
+      jobKey,
+      title: titleSpan ? (titleSpan.getAttribute('title') || titleSpan.textContent || '').trim() : '',
+      company: companyEl?.textContent?.trim() || '',
+      location: locationEl?.textContent?.trim() || '',
+      salary: salaryEl?.textContent?.trim() || '',
+    });
   }
 
   console.log(
