@@ -189,6 +189,7 @@ export type MessageType =
   | 'ASK_CLAUDE_BATCH'
   | 'CLAUDE_RESPONSE'
   | 'MISSING_FIELDS'
+  | 'CLEAR_CACHE'
   | 'NEED_USER_INPUT'
   | 'STATUS_UPDATE'
   | 'GET_NEXT_PAGE'

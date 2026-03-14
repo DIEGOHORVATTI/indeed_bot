@@ -31,7 +31,27 @@ declare const process: { env: { BACKEND_URL: string } };
 const BACKEND_URL = process.env.BACKEND_URL;
 
 initBridge(BACKEND_URL);
-getCache().purgeRefusals();
+
+chrome.storage.local.get('answerCache', (data) => {
+  const entries = data.answerCache || [];
+  const cleaned = entries.filter((e: { answer: string }) => {
+    const a = (e.answer || '').toLowerCase();
+    return !(
+      a.includes("can't provide") ||
+      a.includes("can't help") ||
+      a.includes("can't assist") ||
+      a.includes('fraudulent') ||
+      a.includes('fabricated') ||
+      a.includes('misrepresent') ||
+      a.includes('application fraud') ||
+      a.length > 200
+    );
+  });
+  if (cleaned.length !== entries.length) {
+    chrome.storage.local.set({ answerCache: cleaned });
+    console.log(`[jobpilot] Purged ${entries.length - cleaned.length} cached AI refusals`);
+  }
+});
 
 onCommand((msg: BackendMessage) => {
   switch (msg.type) {
@@ -242,6 +262,12 @@ async function handleMessage(
         undefined
       );
       sendResponse({ payload: { results: batchResults } });
+      break;
+    }
+
+    case 'CLEAR_CACHE': {
+      chrome.storage.local.set({ answerCache: [] });
+      sendResponse({ ok: true });
       break;
     }
 
