@@ -18,10 +18,141 @@ interface SetFilesMessage {
   fileDataBase64: string;
 }
 
+interface SelectOptionMessage {
+  type: 'smartapply-select-option';
+  selector: string;
+  value: string;
+}
+
+/**
+ * Helper: create a minimal synthetic React event object.
+ */
+function makeSyntheticEvent(target: Element, eventType: string) {
+  return {
+    target,
+    currentTarget: target,
+    type: eventType,
+    bubbles: true,
+    preventDefault() {},
+    stopPropagation() {},
+    isPropagationStopped() {
+      return false;
+    },
+    isDefaultPrevented() {
+      return false;
+    },
+    nativeEvent: new Event(eventType, { bubbles: true }),
+    persist() {}
+  };
+}
+
+/**
+ * Helper: find React onChange handler via __reactProps$ or fiber tree and call it.
+ * Returns true if a React handler was found and called.
+ */
+function triggerReactChange(
+  element: Element,
+  eventType: string = 'change'
+): { found: boolean; method?: string; depth?: number } {
+  // Strategy 1: __reactProps$ / __reactEventHandlers$
+  const propsKey = Object.keys(element).find(
+    (k) => k.startsWith('__reactProps$') || k.startsWith('__reactEventHandlers$')
+  );
+  if (propsKey && (element as any)[propsKey]?.onChange) {
+    console.log('[smartapply-main] calling onChange via', propsKey);
+    (element as any)[propsKey].onChange(makeSyntheticEvent(element, eventType));
+    return { found: true, method: 'reactProps' };
+  }
+
+  // Strategy 2: walk React fiber tree
+  const fiberKey = Object.keys(element).find(
+    (k) => k.startsWith('__reactFiber$') || k.startsWith('__reactInternalInstance$')
+  );
+  if (fiberKey) {
+    let fiber = (element as any)[fiberKey];
+    let depth = 0;
+    while (fiber && depth < 20) {
+      const props = fiber.memoizedProps || fiber.pendingProps;
+      if (props?.onChange) {
+        console.log('[smartapply-main] calling onChange via fiber at depth', depth);
+        props.onChange(makeSyntheticEvent(element, eventType));
+        return { found: true, method: 'reactFiber', depth };
+      }
+      fiber = fiber.return;
+      depth++;
+    }
+  }
+
+  return { found: false };
+}
+
 window.addEventListener('message', (event: MessageEvent) => {
   // Only handle our messages
   if (event.source !== window) return;
-  if (!event.data || event.data.type !== 'smartapply-set-files') return;
+  if (!event.data) return;
+
+  // ── Handle select option changes ──
+  if (event.data.type === 'smartapply-select-option') {
+    const { selector, value } = event.data as SelectOptionMessage;
+    try {
+      const select = document.querySelector<HTMLSelectElement>(selector);
+      if (!select) {
+        console.warn('[smartapply-main] select not found:', selector);
+        window.postMessage(
+          { type: 'smartapply-select-option-result', success: false, error: 'select not found' },
+          '*'
+        );
+        return;
+      }
+
+      // Set value using native setter
+      const nativeSetter = Object.getOwnPropertyDescriptor(
+        HTMLSelectElement.prototype,
+        'value'
+      )?.set;
+      if (nativeSetter) {
+        nativeSetter.call(select, value);
+      } else {
+        select.value = value;
+      }
+
+      // Invalidate React's value tracker
+      const tracker = (select as any)._valueTracker;
+      if (tracker) tracker.setValue('');
+
+      console.log('[smartapply-main] select value set to:', value, 'actual:', select.value);
+
+      // Try React onChange
+      const result = triggerReactChange(select, 'change');
+      if (result.found) {
+        window.postMessage(
+          { type: 'smartapply-select-option-result', success: true, ...result },
+          '*'
+        );
+        return;
+      }
+
+      // Fallback: dispatch native events
+      console.log('[smartapply-main] no React handler for select, dispatching native events');
+      select.dispatchEvent(new Event('input', { bubbles: true }));
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+
+      window.postMessage(
+        { type: 'smartapply-select-option-result', success: true, method: 'nativeEvents' },
+        '*'
+      );
+    } catch (err) {
+      console.error('[smartapply-main] select error:', err);
+      window.postMessage(
+        { type: 'smartapply-select-option-result', success: false, error: String(err) },
+        '*'
+      );
+    }
+    return;
+  }
+
+  // ── Handle file input changes ──
+  if (event.data.type !== 'smartapply-set-files') return;
 
   const { selector, fileName, fileType, fileDataBase64 } = event.data as SetFilesMessage;
 
@@ -29,7 +160,10 @@ window.addEventListener('message', (event: MessageEvent) => {
     const input = document.querySelector<HTMLInputElement>(selector);
     if (!input) {
       console.warn('[smartapply-main] input not found:', selector);
-      window.postMessage({ type: 'smartapply-set-files-result', success: false, error: 'input not found' }, '*');
+      window.postMessage(
+        { type: 'smartapply-set-files-result', success: false, error: 'input not found' },
+        '*'
+      );
       return;
     }
 
@@ -45,9 +179,7 @@ window.addEventListener('message', (event: MessageEvent) => {
     const dt = new DataTransfer();
     dt.items.add(file);
 
-    const nativeSetter = Object.getOwnPropertyDescriptor(
-      HTMLInputElement.prototype, 'files'
-    )?.set;
+    const nativeSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'files')?.set;
     if (nativeSetter) {
       nativeSetter.call(input, dt.files);
     } else {
@@ -58,62 +190,22 @@ window.addEventListener('message', (event: MessageEvent) => {
     const tracker = (input as any)._valueTracker;
     if (tracker) tracker.setValue('');
 
-    console.log('[smartapply-main] files set on', selector, ':', input.files?.length, input.files?.[0]?.name);
-
-    // Strategy 1: Find React props directly on element (__reactProps$<hash>)
-    const propsKey = Object.keys(input).find(
-      k => k.startsWith('__reactProps$') || k.startsWith('__reactEventHandlers$')
+    console.log(
+      '[smartapply-main] files set on',
+      selector,
+      ':',
+      input.files?.length,
+      input.files?.[0]?.name
     );
-    if (propsKey && (input as any)[propsKey]?.onChange) {
-      console.log('[smartapply-main] calling onChange via', propsKey);
-      (input as any)[propsKey].onChange({
-        target: input,
-        currentTarget: input,
-        type: 'change',
-        bubbles: true,
-        preventDefault() {},
-        stopPropagation() {},
-        isPropagationStopped() { return false; },
-        isDefaultPrevented() { return false; },
-        nativeEvent: new Event('change', { bubbles: true }),
-        persist() {},
-      });
-      window.postMessage({ type: 'smartapply-set-files-result', success: true, method: 'reactProps' }, '*');
+
+    // Try React onChange via shared helper
+    const result = triggerReactChange(input, 'change');
+    if (result.found) {
+      window.postMessage({ type: 'smartapply-set-files-result', success: true, ...result }, '*');
       return;
     }
 
-    // Strategy 2: Walk React fiber tree to find onChange
-    const fiberKey = Object.keys(input).find(
-      k => k.startsWith('__reactFiber$') || k.startsWith('__reactInternalInstance$')
-    );
-    if (fiberKey) {
-      let fiber = (input as any)[fiberKey];
-      let depth = 0;
-      while (fiber && depth < 20) {
-        const props = fiber.memoizedProps || fiber.pendingProps;
-        if (props?.onChange) {
-          console.log('[smartapply-main] calling onChange via fiber at depth', depth);
-          props.onChange({
-            target: input,
-            currentTarget: input,
-            type: 'change',
-            bubbles: true,
-            preventDefault() {},
-            stopPropagation() {},
-            isPropagationStopped() { return false; },
-            isDefaultPrevented() { return false; },
-            nativeEvent: new Event('change', { bubbles: true }),
-            persist() {},
-          });
-          window.postMessage({ type: 'smartapply-set-files-result', success: true, method: 'reactFiber', depth }, '*');
-          return;
-        }
-        fiber = fiber.return;
-        depth++;
-      }
-    }
-
-    // Strategy 3: Dispatch native events from MAIN world
+    // Fallback: Dispatch native events from MAIN world
     console.log('[smartapply-main] no React handler found, dispatching native events');
     input.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
     input.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
@@ -123,12 +215,20 @@ window.addEventListener('message', (event: MessageEvent) => {
       const dropDt = new DataTransfer();
       dropDt.items.add(file);
       input.dispatchEvent(new DragEvent('drop', { bubbles: true, dataTransfer: dropDt }));
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
 
-    window.postMessage({ type: 'smartapply-set-files-result', success: true, method: 'nativeEvents' }, '*');
+    window.postMessage(
+      { type: 'smartapply-set-files-result', success: true, method: 'nativeEvents' },
+      '*'
+    );
   } catch (err) {
     console.error('[smartapply-main] error:', err);
-    window.postMessage({ type: 'smartapply-set-files-result', success: false, error: String(err) }, '*');
+    window.postMessage(
+      { type: 'smartapply-set-files-result', success: false, error: String(err) },
+      '*'
+    );
   }
 });
 

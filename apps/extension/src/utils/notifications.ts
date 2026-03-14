@@ -20,7 +20,7 @@ export async function notifyUserInput(
       title: 'Indeed Apply — Input Needed',
       message: `Cannot answer: "${fieldLabel}"${jobTitle ? ` for ${jobTitle}` : ''}`,
       requireInteraction: true,
-      priority: 2,
+      priority: 2
     });
 
     pendingNotifications.set(notifId, tabId);
@@ -40,7 +40,7 @@ export function setupNotificationListeners(): void {
       chrome.windows.getAll({ populate: false }, (windows) => {
         for (const w of windows) {
           chrome.tabs.query({ windowId: w.id }, (tabs) => {
-            if (tabs.some(t => t.id === tabId)) {
+            if (tabs.some((t) => t.id === tabId)) {
               chrome.windows.update(w.id!, { focused: true });
             }
           });

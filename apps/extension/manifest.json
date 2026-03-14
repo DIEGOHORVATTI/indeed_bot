@@ -1,11 +1,10 @@
 {
   "manifest_version": 3,
-  "name": "Indeed Auto Apply",
-  "version": "0.2.27",
-  "description": "Auto-apply to Indeed jobs with AI-tailored CV and smart form filling",
+  "name": "JobPilot",
+  "version": "0.4.2",
+  "description": "Auto-apply to jobs across all platforms with AI-tailored CV and smart form filling",
   "permissions": [
     "tabs",
-    "tabGroups",
     "storage",
     "notifications",
     "alarms",
@@ -13,9 +12,7 @@
     "scripting"
   ],
   "host_permissions": [
-    "*://*.indeed.com/*",
-    "*://*.linkedin.com/*",
-    "http://localhost:*/*"
+    "<all_urls>"
   ],
   "background": {
     "service_worker": "background.js"
@@ -53,6 +50,23 @@
       ],
       "run_at": "document_idle",
       "all_frames": true
+    },
+    {
+      "matches": ["*://*.linkedin.com/*"],
+      "exclude_matches": ["*://*.linkedin.com/messaging/*"],
+      "js": ["content/linkedin.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["<all_urls>"],
+      "exclude_matches": [
+        "*://*.indeed.com/*",
+        "*://smartapply.indeed.com/*",
+        "*://*.linkedin.com/*",
+        "*://chrome.google.com/*"
+      ],
+      "js": ["content/generic-form.js"],
+      "run_at": "document_idle"
     }
   ],
   "action": {
@@ -63,7 +77,6 @@
       "128": "assets/icons/icon128.png"
     }
   },
-  "options_page": "options/options.html",
   "icons": {
     "16": "assets/icons/icon16.png",
     "48": "assets/icons/icon48.png",

@@ -9,15 +9,89 @@ import { CacheEntry } from '../types';
 const STORAGE_KEY = 'answerCache';
 
 const STOP_WORDS = new Set([
-  'a', 'an', 'the', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
-  'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
-  'should', 'may', 'might', 'shall', 'can', 'to', 'of', 'in', 'for',
-  'on', 'with', 'at', 'by', 'from', 'as', 'into', 'about', 'between',
-  'through', 'after', 'before', 'above', 'below', 'and', 'or', 'but',
-  'not', 'no', 'if', 'then', 'than', 'that', 'this', 'these', 'those',
-  'it', 'its', 'you', 'your', 'we', 'our', 'um', 'uma', 'o', 'os',
-  'as', 'de', 'do', 'da', 'dos', 'das', 'em', 'no', 'na', 'nos',
-  'nas', 'por', 'para', 'com', 'sem', 'e', 'ou', 'mas', 'se',
+  'a',
+  'an',
+  'the',
+  'is',
+  'are',
+  'was',
+  'were',
+  'be',
+  'been',
+  'being',
+  'have',
+  'has',
+  'had',
+  'do',
+  'does',
+  'did',
+  'will',
+  'would',
+  'could',
+  'should',
+  'may',
+  'might',
+  'shall',
+  'can',
+  'to',
+  'of',
+  'in',
+  'for',
+  'on',
+  'with',
+  'at',
+  'by',
+  'from',
+  'as',
+  'into',
+  'about',
+  'between',
+  'through',
+  'after',
+  'before',
+  'above',
+  'below',
+  'and',
+  'or',
+  'but',
+  'not',
+  'no',
+  'if',
+  'then',
+  'than',
+  'that',
+  'this',
+  'these',
+  'those',
+  'it',
+  'its',
+  'you',
+  'your',
+  'we',
+  'our',
+  'um',
+  'uma',
+  'o',
+  'os',
+  'as',
+  'de',
+  'do',
+  'da',
+  'dos',
+  'das',
+  'em',
+  'no',
+  'na',
+  'nos',
+  'nas',
+  'por',
+  'para',
+  'com',
+  'sem',
+  'e',
+  'ou',
+  'mas',
+  'se'
 ]);
 
 function tokenize(text: string): Set<string> {
@@ -117,12 +191,17 @@ export class AnswerCache {
       tokens,
       inputType,
       answer,
-      options: options || [],
+      options: options || []
     });
     await this.save();
   }
 
-  async lookup(label: string, inputType: string, options?: string[], threshold = 0.5): Promise<string | null> {
+  async lookup(
+    label: string,
+    inputType: string,
+    options?: string[],
+    threshold = 0.5
+  ): Promise<string | null> {
     await this.load();
     const queryTokens = tokenize(label);
     if (queryTokens.size === 0) return null;
@@ -149,6 +228,27 @@ export class AnswerCache {
     }
 
     return answer;
+  }
+
+  async purgeRefusals(): Promise<void> {
+    await this.load();
+    const before = this.entries.length;
+    this.entries = this.entries.filter((e) => {
+      const a = e.answer.toLowerCase();
+      return !(
+        a.includes("can't provide") ||
+        a.includes("can't help") ||
+        a.includes("can't assist") ||
+        a.includes('fraudulent') ||
+        a.includes('fabricated') ||
+        a.includes('misrepresented') ||
+        a.includes('application fraud') ||
+        a.length > 200
+      );
+    });
+    if (this.entries.length < before) {
+      await this.save();
+    }
   }
 
   get size(): number {

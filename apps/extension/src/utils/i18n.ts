@@ -4,24 +4,46 @@
  */
 
 export const SUBMIT_KEYWORDS = [
-  'submit', 'soumettre', 'enviar', 'déposer', 'apply',
-  'bewerben', 'postular', 'candidatura',
+  'submit',
+  'soumettre',
+  'enviar',
+  'déposer',
+  'apply',
+  'bewerben',
+  'postular',
+  'candidatura'
 ];
 
 export const CONTINUE_KEYWORDS = [
-  'continue', 'continuer', 'continuar', 'next',
-  'próximo', 'suivant', 'weiter',
+  'continue',
+  'continuer',
+  'continuar',
+  'next',
+  'próximo',
+  'suivant',
+  'weiter'
 ];
 
 export const SKIP_KEYWORDS = [
-  'back', 'previous', 'anterior', 'retour', 'cancel',
-  'close', 'fechar', 'voltar', 'précédent',
+  'back',
+  'previous',
+  'anterior',
+  'retour',
+  'cancel',
+  'close',
+  'fechar',
+  'voltar',
+  'précédent'
 ];
 
 export const EXTERNAL_APPLY_KEYWORDS = [
-  'site da empresa', 'company site', "company's site",
-  "site de l'entreprise", 'unternehmenswebsite',
-  'sitio de la empresa', 'external site',
+  'site da empresa',
+  'company site',
+  "company's site",
+  "site de l'entreprise",
+  'unternehmenswebsite',
+  'sitio de la empresa',
+  'external site'
 ];
 
 export const APPLY_BUTTON_SELECTORS = [
@@ -32,12 +54,10 @@ export const APPLY_BUTTON_SELECTORS = [
   'button:visible:has-text("Candidatura simplificada")',
   'button:visible:has-text("Postuler")',
   'button:visible:has-text("Apply now")',
-  'button:visible:has-text("Apply")',
+  'button:visible:has-text("Apply")'
 ];
 
-export const APPLY_HEURISTIC_KEYWORDS = [
-  'postuler', 'apply', 'candidat', 'bewerben', 'postular',
-];
+export const APPLY_HEURISTIC_KEYWORDS = ['postuler', 'apply', 'candidat', 'bewerben', 'postular'];
 
 export const SUBMIT_SELECTORS = [
   'button:visible:has-text("Déposer ma candidature")',
@@ -48,7 +68,7 @@ export const SUBMIT_SELECTORS = [
   'button:visible:has-text("Enviar")',
   'button:visible:has-text("Apply")',
   'button:visible:has-text("Bewerben")',
-  'button:visible:has-text("Postular")',
+  'button:visible:has-text("Postular")'
 ];
 
 export const CONTINUE_SELECTORS = [
@@ -59,7 +79,7 @@ export const CONTINUE_SELECTORS = [
   'button:visible:has-text("Next")',
   'button:visible:has-text("Próximo")',
   'button:visible:has-text("Suivant")',
-  'button:visible:has-text("Weiter")',
+  'button:visible:has-text("Weiter")'
 ];
 
 export const RESUME_OPTIONS_SELECTORS = [
@@ -76,7 +96,7 @@ export const RESUME_OPTIONS_SELECTORS = [
   'button:visible:has-text("Change")',
   'button:visible:has-text("Alterar")',
   'button:visible:has-text("Currículo")',
-  'button:visible:has-text("CV")',
+  'button:visible:has-text("CV")'
 ];
 
 export const UPLOAD_BUTTON_SELECTORS = [
@@ -102,7 +122,7 @@ export const UPLOAD_BUTTON_SELECTORS = [
   'label:visible:has-text("Upload")',
   'label:visible:has-text("Carregar")',
   '[data-testid="ResumeUploadButton"]',
-  '[data-testid*="uploadResume" i]',
+  '[data-testid*="uploadResume" i]'
 ];
 
 export const COVER_LETTER_SELECTORS = [
@@ -120,7 +140,7 @@ export const COVER_LETTER_SELECTORS = [
   'label:visible:has-text("cover letter")',
   'label:visible:has-text("carta")',
   '[data-testid*="coverLetter" i] button:visible',
-  '[data-testid*="cover-letter" i] button:visible',
+  '[data-testid*="cover-letter" i] button:visible'
 ];
 
 export const RESUME_CARD_SELECTORS = [
@@ -135,7 +155,7 @@ export const RESUME_CARD_SELECTORS = [
   '[data-testid*="resume-display"]',
   'div[class*="ResumeCard"]',
   'div[class*="resume-card"]',
-  '[data-testid="resume-display-text"]',
+  '[data-testid="resume-display-text"]'
 ];
 
 /** Return the appropriate Indeed domain for a given language/locale code. */

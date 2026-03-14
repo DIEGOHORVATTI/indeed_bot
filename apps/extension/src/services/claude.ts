@@ -52,7 +52,7 @@ export async function askClaudeForAnswer(
     const response = await fetch(`${backendUrl}/api/answer`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify(body)
     });
 
     if (!response.ok) {
@@ -66,6 +66,10 @@ export async function askClaudeForAnswer(
 
     // If options provided, find best match
     if (options && options.length > 0) {
+      // Multi-select: answer contains | separator — return as-is for caller to parse
+      if (answer.includes('|')) {
+        return answer;
+      }
       const lower = answer.toLowerCase();
       for (const opt of options) {
         if (
@@ -85,9 +89,42 @@ export async function askClaudeForAnswer(
   }
 }
 
-/**
- * Generate tailored CV/cover letter content via backend.
- */
+export interface BatchField {
+  id: string;
+  question: string;
+  options?: string[];
+  constraints?: BackendAnswerRequest['constraints'];
+}
+
+export interface BatchResult {
+  answer: string | null;
+  missing: boolean;
+}
+
+export async function askClaudeBatch(
+  fields: BatchField[],
+  jobTitle: string,
+  backendUrl: string,
+  baseProfile?: string
+): Promise<Record<string, BatchResult> | null> {
+  if (!backendUrl || fields.length === 0) return null;
+
+  try {
+    const response = await fetch(`${backendUrl}/api/answer-batch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields, jobTitle, baseProfile })
+    });
+
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data.results || null;
+  } catch {
+    return null;
+  }
+}
+
+
 export async function generateTailoredContent(
   jobInfo: { title: string; company: string; description: string },
   baseCv: string,
@@ -101,13 +138,13 @@ export async function generateTailoredContent(
     jobCompany: jobInfo.company,
     jobDescription: jobInfo.description.substring(0, 4000),
     baseCv,
-    baseCoverLetter,
+    baseCoverLetter
   };
 
   const response = await fetch(`${backendUrl}/api/tailor`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify(body)
   });
 
   if (!response.ok) {
@@ -132,7 +169,7 @@ export async function generatePdfFromHtml(
   const response = await fetch(`${backendUrl}/api/generate-pdf`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ html, filename }),
+    body: JSON.stringify({ html, filename })
   });
 
   if (!response.ok) {
@@ -141,4 +178,23 @@ export async function generatePdfFromHtml(
   }
 
   return response.arrayBuffer();
+}
+
+/**
+ * Try to fetch an existing PDF from the backend output/ folder.
+ * Returns the PDF ArrayBuffer if found, or null if not.
+ */
+export async function fetchExistingPdf(
+  backendUrl: string,
+  filename: string
+): Promise<ArrayBuffer | null> {
+  if (!backendUrl || !filename) return null;
+
+  try {
+    const response = await fetch(`${backendUrl}/api/pdf/${encodeURIComponent(filename)}`);
+    if (!response.ok) return null;
+    return response.arrayBuffer();
+  } catch {
+    return null;
+  }
 }

@@ -1,0 +1,11 @@
+{
+  "name": "Your Name",
+  "email": "you@email.com",
+  "phone": "+55 11 99999-9999",
+  "location": "São Paulo, SP",
+  "linkedin": "https://linkedin.com/in/yourprofile",
+  "github": "https://github.com/yourusername",
+  "portfolio": "https://yourportfolio.dev",
+  "base_cv": "# Your CV in markdown...",
+  "base_cover_letter": "# Your cover letter template..."
+}

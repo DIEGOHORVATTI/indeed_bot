@@ -3,20 +3,26 @@ requires = ["hatchling>=1.26.0"]
 build-backend = "hatchling.build"
 
 [project]
-name = "indeed-bot"
-version = "0.1.0"
-description = "Indeed Auto-Apply — Chrome extension + AI backend"
+name = "job-pilot"
+version = "0.2.0"
+description = "JobPilot AI — Autonomous multi-platform job agent + Chrome extension"
 readme = "README.md"
 authors = [
   { name = "meteor314" }
 ]
 license = { file = "LICENSE" }
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
   "fastapi>=0.115",
   "uvicorn[standard]>=0.34",
   "pydantic>=2",
   "playwright>=1.58.0",
+  "anthropic>=0.42",
+  "python-jobspy>=1.1.75",
+  "pyyaml>=6.0",
+  "beautifulsoup4>=4.12",
+  "requests>=2.31",
+  "rich>=13.0",
 ]
 
 [project.urls]
@@ -26,4 +32,4 @@ Homepage = "https://github.com/TechWithTy/indeed_bot"
 package = false
 
 [tool.hatch.build.targets.wheel]
-packages = ["apps/backend"]
+packages = ["apps/backend", "apps/agent"]

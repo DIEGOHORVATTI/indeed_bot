@@ -1,0 +1,34 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1773370613425,
+      "tag": "0000_clear_ares",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1773384328978,
+      "tag": "0001_round_skin",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1773392409693,
+      "tag": "0002_windy_maddog",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1773424237872,
+      "tag": "0003_perfect_hannibal_king",
+      "breakpoints": true
+    }
+  ]
+}

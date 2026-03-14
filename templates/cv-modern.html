@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <style>
+    @page {
+      size: A4;
+      margin: 0;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Arial, Helvetica, sans-serif;
+      font-size: 9.5pt;
+      color: #2d2d2d;
+      line-height: 1.45;
+      background: #fff;
+      display: flex;
+      min-height: 100vh;
+    }
+
+    .sidebar {
+      width: 220px;
+      background: #16213e;
+      color: #fff;
+      padding: 28px 20px 20px 20px;
+      flex-shrink: 0;
+    }
+
+    .sidebar h1 {
+      font-size: 16pt;
+      font-weight: 800;
+      letter-spacing: 1px;
+      line-height: 1.2;
+      margin-bottom: 4px;
+    }
+
+    .sidebar .objective {
+      font-size: 9pt;
+      color: #e94560;
+      font-weight: 600;
+      margin-bottom: 16px;
+      letter-spacing: 0.3px;
+    }
+
+    .sidebar .contact {
+      font-size: 7.5pt;
+      color: rgba(255, 255, 255, 0.7);
+      line-height: 1.6;
+      margin-bottom: 20px;
+    }
+
+    .sidebar .contact a {
+      color: rgba(255, 255, 255, 0.9);
+      text-decoration: none;
+      font-weight: 600;
+    }
+
+    .sidebar .contact .sep {
+      display: block;
+      height: 0;
+      overflow: hidden;
+    }
+
+    .sidebar h2 {
+      font-size: 8pt;
+      font-weight: 700;
+      color: #e94560;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      margin: 16px 0 6px 0;
+      padding-bottom: 3px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+    }
+
+    .sidebar .skills-grid {
+      font-size: 8pt;
+      color: rgba(255, 255, 255, 0.85);
+    }
+
+    .sidebar .skills-grid .row {
+      margin-bottom: 3px;
+      padding: 1px 0;
+    }
+
+    .sidebar .skills-grid .label {
+      font-weight: 700;
+      color: #e94560;
+      display: block;
+      margin-bottom: 1px;
+    }
+
+    .sidebar .languages-section {
+      font-size: 8pt;
+      color: rgba(255, 255, 255, 0.85);
+    }
+
+    .sidebar .languages-section strong {
+      color: #fff;
+    }
+
+    .sidebar .certs {
+      font-size: 7.5pt;
+      color: rgba(255, 255, 255, 0.8);
+    }
+
+    .sidebar .certs ul {
+      margin-left: 12px;
+    }
+
+    .sidebar .certs li {
+      margin-bottom: 2px;
+    }
+
+    .sidebar .additional {
+      font-size: 7.5pt;
+      color: rgba(255, 255, 255, 0.6);
+      margin-top: 8px;
+    }
+
+    .content {
+      flex: 1;
+      padding: 28px 30px 20px 28px;
+    }
+
+    .content h2 {
+      font-size: 9pt;
+      font-weight: 700;
+      color: #16213e;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      margin: 14px 0 5px 0;
+      padding-bottom: 3px;
+      border-bottom: 2px solid #e94560;
+    }
+
+    .content h2:first-child {
+      margin-top: 0;
+    }
+
+    .summary {
+      font-size: 9pt;
+      color: #444;
+      margin-bottom: 2px;
+      line-height: 1.55;
+    }
+
+    .keywords {
+      margin: 5px 0 4px 0;
+    }
+
+    .keywords .badge {
+      display: inline-block;
+      background: #16213e;
+      border-radius: 3px;
+      padding: 2px 7px;
+      font-size: 7pt;
+      color: #fff;
+      margin: 1.5px 2px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+    }
+
+    .job {
+      margin-bottom: 8px;
+    }
+
+    .job-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+
+    .job-title {
+      font-weight: 700;
+      font-size: 9.5pt;
+      color: #16213e;
+    }
+
+    .job-date {
+      font-size: 7.5pt;
+      color: #888;
+      white-space: nowrap;
+      font-style: italic;
+    }
+
+    .job-company {
+      font-size: 8pt;
+      color: #666;
+      margin-bottom: 2px;
+    }
+
+    .job ul {
+      margin-left: 14px;
+      font-size: 8.5pt;
+      color: #333;
+    }
+
+    .job ul li {
+      margin-bottom: 1px;
+      line-height: 1.4;
+    }
+
+    .edu {
+      font-size: 8.5pt;
+      margin-bottom: 2px;
+    }
+
+    .edu strong {
+      font-weight: 700;
+      color: #16213e;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="sidebar">
+    <h1>{{profile_name}}</h1>
+    <div class="objective">{{objective}}</div>
+    <div class="contact">
+      {{profile_contact}}
+    </div>
+
+    <h2>{{section_skills}}</h2>
+    <div class="skills-grid">
+      {{skills}}
+    </div>
+
+    <h2>{{section_languages}}</h2>
+    <div class="languages-section">
+      {{languages}}
+    </div>
+
+    <h2>{{section_certifications}}</h2>
+    <div class="certs">
+      {{certifications}}
+    </div>
+
+    {{additional_info}}
+  </div>
+
+  <div class="content">
+    <h2>{{section_summary}}</h2>
+    <p class="summary">{{summary}}</p>
+    <div class="keywords">{{keywords}}</div>
+
+    <h2>{{section_experience}}</h2>
+    {{experience}}
+
+    <h2>{{section_education}}</h2>
+    <div class="edu">
+      {{education}}
+    </div>
+  </div>
+
+</body>
+
+</html>

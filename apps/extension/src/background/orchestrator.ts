@@ -1,15 +1,29 @@
-/**
- * Bot orchestrator — state machine that drives the application flow.
- * Ported from Python bot.py.
- */
-
 import { BotState, BotStatus, JobEntry, LogEntry, Message, Settings } from '../types';
 import { JobRegistry } from '../services/job-registry';
 import { AnswerCache } from '../services/answer-cache';
-import { askClaudeForAnswer, generateTailoredContent, generatePdfFromHtml } from '../services/claude';
-import { fillCvTemplate, fillCoverTemplate, fillCvWithCoverTemplate, loadTemplates } from '../services/pdf';
-import { createTabGroup, addTabToGroup, closeTab, navigateTab, waitForTabLoad } from './tab-group';
-import { notifyUserInput } from '../utils/notifications';
+import { generateTailoredContent, generatePdfFromHtml, fetchExistingPdf } from '../services/claude';
+import {
+  fillCvTemplate,
+  fillCoverTemplate,
+  fillCvWithCoverTemplate,
+  loadTemplates
+} from '../services/pdf';
+import {
+  createTab,
+  closeTab,
+  navigateTab,
+  waitForTabLoad,
+  getActiveTabId
+} from './tab-group';
+import { TIMING, LIMITS, URL_PATTERNS } from '../utils/constants';
+import {
+  sendStatus,
+  sendScreenshot,
+  sendJobApplied,
+  sendJobFailed,
+  sendLog as bridgeLog,
+  isConnected
+} from './ws-bridge';
 
 const registry = new JobRegistry();
 const cache = new AnswerCache();
@@ -18,35 +32,127 @@ export function getCache(): AnswerCache {
   return cache;
 }
 
+interface CvPayload {
+  cvData?: number[];
+  cvOnlyData?: number[];
+  cvFilename?: string;
+  coverData?: number[];
+  coverFilename?: string;
+  jobTitle: string;
+  baseProfile: string;
+}
+
+interface TabWorker {
+  tabId: number;
+  job: JobEntry;
+  state: 'navigating' | 'filling' | 'waiting_review' | 'done';
+  cvPayload?: CvPayload;
+}
+
 let state: BotState = 'idle';
+let applyMode: 'semi-auto' | 'full-auto' = 'semi-auto';
 let appliedCount = 0;
 let skippedCount = 0;
 let failedCount = 0;
 let jobs: JobEntry[] = [];
 let currentJobIndex = 0;
 let log: LogEntry[] = [];
-let botTabId: number | null = null;
 let settings: Settings | null = null;
 let stopRequested = false;
 let currentSearchUrl = '';
 let currentSearchIndex = 0;
 let totalSearchUrls = 0;
 
-// ── Logging ──
+let tabWorkers: TabWorker[] = [];
+
+let tabUrlListener: ((tabId: number, info: chrome.tabs.TabChangeInfo) => void) | null = null;
+
+function startTabUrlMonitor(): void {
+  stopTabUrlMonitor();
+  tabUrlListener = (tabId, info) => {
+    if (!info.url) return;
+    const worker = tabWorkers.find((w) => w.tabId === tabId && w.state === 'waiting_review');
+    if (!worker) return;
+
+    const url = info.url;
+    const isSubmission = URL_PATTERNS.submission.some((kw) => url.includes(kw));
+    const leftSmartApply = !url.includes('smartapply.indeed.com');
+
+    if (isSubmission || leftSmartApply) {
+      addLog('info', `[Tab ${tabWorkers.indexOf(worker) + 1}] Submission detected via URL monitor: ${url}`);
+      onTabSubmitted(tabId);
+    }
+  };
+  chrome.tabs.onUpdated.addListener(tabUrlListener);
+}
+
+function stopTabUrlMonitor(): void {
+  if (tabUrlListener) {
+    chrome.tabs.onUpdated.removeListener(tabUrlListener);
+    tabUrlListener = null;
+  }
+}
+
+const pdfCache = new Map<
+  string,
+  {
+    cvPdfData: ArrayBuffer;
+    cvOnlyPdfData: ArrayBuffer;
+    coverPdfData: ArrayBuffer;
+    cvFilename: string;
+    coverFilename: string;
+  }
+>();
 
 export function addLog(level: LogEntry['level'], message: string): void {
+  const prefix = `[bot:${state}]`;
+  console.log(`${prefix} [${level}] ${message}`);
   log.push({ timestamp: Date.now(), level, message });
   if (log.length > 200) log = log.slice(-100);
   broadcastStatus();
+  if (isConnected()) {
+    bridgeLog(level, message);
+  }
 }
 
 function broadcastStatus(): void {
   const status = getStatus();
   chrome.runtime.sendMessage({ type: 'STATUS_UPDATE', payload: status }).catch(() => {});
+  if (isConnected()) {
+    sendStatus(status);
+  }
+}
+
+async function reportScreenshot(tabId: number): Promise<void> {
+  if (!isConnected()) return;
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    const pageContextResult = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => {
+        const title = document.title || '';
+        const heading = document.querySelector('h1')?.textContent?.trim() || '';
+        const metaDescription = (
+          document.querySelector('meta[name="description"]') as HTMLMetaElement | null
+        )?.content;
+        return [title, heading, metaDescription || ''].filter(Boolean).join(' | ');
+      }
+    });
+    const screenshot = await chrome.tabs.captureVisibleTab(tab.windowId, {
+      format: 'jpeg',
+      quality: 60
+    });
+    sendScreenshot({
+      screenshot,
+      url: tab.url || '',
+      pageContext: String(pageContextResult?.[0]?.result || '')
+    });
+  } catch {}
 }
 
 export function getStatus(): BotStatus {
-  const pending = jobs.filter(j => j.status === 'pending').length;
+  const pending = jobs.filter((j) => j.status === 'pending').length;
+  const activeWorkers = tabWorkers.filter((w) => w.state !== 'done').length;
   return {
     state,
     appliedCount,
@@ -54,64 +160,117 @@ export function getStatus(): BotStatus {
     failedCount,
     pendingJobs: pending,
     totalJobs: jobs.length,
-    currentJob: jobs[currentJobIndex]?.title || jobs[currentJobIndex]?.url,
+    currentJob:
+      tabWorkers.find((w) => w.state !== 'done')?.job?.title || jobs[currentJobIndex]?.title,
     currentSearchUrl,
     currentSearchIndex,
     totalSearchUrls,
-    log: log.slice(-50),
+    activeWorkers,
+    scrapingTabs: 1,
+    collectionStats: {
+      externalApply: 0,
+      duplicates: 0,
+      alreadyKnown: 0
+    },
+    log: log.slice(-50)
   };
 }
 
-// ── Helpers ──
-
 function delay(ms: number): Promise<void> {
-  return new Promise(r => setTimeout(r, ms));
+  return new Promise((r) => setTimeout(r, ms));
 }
 
-function randomDelay(minMs: number, maxMs: number): Promise<void> {
-  return delay(minMs + Math.random() * (maxMs - minMs));
-}
-
-async function sendToTab(tabId: number, message: Message): Promise<any> {
-  return new Promise((resolve) => {
-    chrome.tabs.sendMessage(tabId, message, (response) => {
-      resolve(response);
+async function sendToTab(tabId: number, message: Message, retries = 3): Promise<any> {
+  for (let i = 0; i < retries; i++) {
+    const response = await new Promise<any>((resolve) => {
+      chrome.tabs.sendMessage(tabId, message, (resp) => {
+        if (chrome.runtime.lastError) resolve(undefined);
+        else resolve(resp);
+      });
     });
-  });
+    if (response !== undefined) return response;
+    if (i < retries - 1) await delay(2000);
+  }
+  return undefined;
 }
-
-// ── Main Bot Loop ──
 
 export async function startBot(userSettings: Settings): Promise<void> {
+  const selectedJobs = (userSettings.searchUrls || []).map((url, idx) => ({
+    id: idx + 1,
+    url,
+    title: '',
+    company: ''
+  }));
+  await applySelectedJobs(userSettings, selectedJobs, 'semi-auto');
+}
+
+let generateCvForBatch = true;
+
+export async function applySelectedJobs(
+  userSettings: Settings,
+  selectedJobs: Array<{ id: number; url: string; title: string; company: string }>,
+  mode: 'semi-auto' | 'full-auto',
+  generateCv = true
+): Promise<void> {
   if (state !== 'idle') return;
 
   settings = userSettings;
-  state = 'collecting';
+  state = 'applying';
   appliedCount = 0;
   skippedCount = 0;
   failedCount = 0;
-  jobs = [];
+  jobs = selectedJobs.map((j) => {
+    let jobKey = '';
+    try {
+      const params = new URL(j.url).searchParams;
+      jobKey = params.get('jk') || params.get('vjk') || '';
+    } catch {}
+    return {
+      url: j.url,
+      jobKey,
+      title: j.title,
+      company: j.company,
+      status: 'pending' as const
+    };
+  });
   currentJobIndex = 0;
   log = [];
   stopRequested = false;
+  tabWorkers = [];
   currentSearchUrl = '';
   currentSearchIndex = 0;
-  totalSearchUrls = settings.searchUrls.length;
+  totalSearchUrls = 0;
+  generateCvForBatch = generateCv;
+  applyMode = mode;
 
   await registry.load();
   await cache.load();
-  await loadTemplates();
+  if (generateCvForBatch) await loadTemplates();
+  startTabUrlMonitor();
 
-  addLog('info', 'Bot started');
+  addLog('info', `Aplicando em ${jobs.length} vaga(s) — modo: ${mode}`);
   broadcastStatus();
 
   try {
-    await collectAndApply();
+    await launchNextWorker(null);
+
+    while (!stopRequested) {
+      const activeWorkers = tabWorkers.filter((w) => w.state !== 'done').length;
+      const hasPending = jobs.some((j) => j.status === 'pending');
+
+      if (activeWorkers === 0 && !hasPending) break;
+      if (activeWorkers === 0 && hasPending) {
+        await launchNextWorker();
+      }
+
+      await delay(1000);
+    }
   } catch (err) {
-    addLog('error', `Bot error: ${err}`);
+    addLog('error', `Erro na aplicacao: ${err}`);
   } finally {
     state = 'idle';
-    addLog('info', `Bot finished. Applied: ${appliedCount}, Skipped: ${skippedCount}`);
+    stopTabUrlMonitor();
+    addLog('info', `Aplicacao finalizada. Applied: ${appliedCount}, Skipped: ${skippedCount}`);
     broadcastStatus();
   }
 }
@@ -119,12 +278,20 @@ export async function startBot(userSettings: Settings): Promise<void> {
 export function stopBot(): void {
   stopRequested = true;
   state = 'idle';
+  stopTabUrlMonitor();
+  for (const job of jobs) {
+    if (job.status === 'in_progress') job.status = 'pending';
+  }
+  for (const worker of tabWorkers) {
+    closeTab(worker.tabId).catch(() => {});
+  }
+  tabWorkers = [];
   addLog('info', 'Bot stopped by user');
   broadcastStatus();
 }
 
 export function pauseBot(): void {
-  if (state === 'applying' || state === 'collecting') {
+  if (state === 'applying') {
     state = 'paused';
     addLog('info', 'Bot paused');
     broadcastStatus();
@@ -139,355 +306,362 @@ export function resumeBot(): void {
   }
 }
 
-// ── Collection + Application ──
+function getNextPendingJob(): JobEntry | null {
+  return jobs.find((j) => j.status === 'pending') || null;
+}
 
-async function collectAndApply(): Promise<void> {
-  if (!settings) return;
+async function launchNextWorker(reuseTabId: number | null = null): Promise<void> {
+  if (stopRequested || !settings || state === 'paused') return;
 
-  totalSearchUrls = settings.searchUrls.length;
+  if (settings.maxApplies > 0 && appliedCount >= settings.maxApplies) {
+    addLog('info', `Reached max applies limit (${settings.maxApplies})`);
+    return;
+  }
 
-  for (let searchIdx = 0; searchIdx < settings.searchUrls.length; searchIdx++) {
-    if (stopRequested) break;
-    if (settings.maxApplies > 0 && appliedCount >= settings.maxApplies) {
-      addLog('info', `Reached max applies limit (${settings.maxApplies})`);
-      break;
+  const job = getNextPendingJob();
+  if (!job) return;
+
+  job.status = 'in_progress';
+
+  const worker: TabWorker = {
+    tabId: reuseTabId || -1,
+    job,
+    state: 'navigating'
+  };
+  tabWorkers.push(worker);
+
+  try {
+    await prepareAndFillJob(worker);
+  } catch (err) {
+    addLog('error', `Worker error for ${job.title || job.url}: ${err}`);
+    job.status = 'failed';
+    failedCount++;
+    if (isConnected()) {
+      sendJobFailed(job.jobKey, String(err));
     }
-
-    const searchUrl = settings.searchUrls[searchIdx];
-    currentSearchUrl = searchUrl;
-    currentSearchIndex = searchIdx;
-
-    addLog('info', `[Link ${searchIdx + 1}/${totalSearchUrls}] Collecting from: ${searchUrl}`);
-
-    // ── Phase 1: Collect ALL pages for this search URL ──
-    state = 'collecting';
-    const batchStartIndex = jobs.length;
-    let pageUrl: string | null = searchUrl;
-    let pageNum = 1;
-
-    while (pageUrl && !stopRequested) {
-      // Navigate to search page
-      if (!botTabId) {
-        const { tabId } = await createTabGroup(pageUrl);
-        botTabId = tabId;
-      } else {
-        await navigateTab(botTabId, pageUrl);
-      }
-
-      await waitForTabLoad(botTabId, 15000);
-      await delay(2000);
-
-      broadcastStatus();
-
-      const response = await sendToTab(botTabId, { type: 'COLLECT_LINKS' });
-      const links: { url: string; jobKey: string }[] = response?.payload || [];
-
-      if (links.length === 0) {
-        addLog('info', `No more jobs on page ${pageNum}`);
-        break;
-      }
-
-      // Filter known jobs
-      const newLinks: { url: string; jobKey: string }[] = [];
-      for (const link of links) {
-        if (await registry.isKnown(link.jobKey)) continue;
-        newLinks.push(link);
-      }
-
-      for (const link of newLinks) {
-        jobs.push({ url: link.url, jobKey: link.jobKey, status: 'pending' });
-      }
-
-      const skipped = links.length - newLinks.length;
-      const totalNew = jobs.length - batchStartIndex;
-      addLog('info', `Page ${pageNum}: +${newLinks.length} new${skipped ? ` (${skipped} known)` : ''} — ${totalNew} total collected`);
-      broadcastStatus();
-
-      // Check for next page
-      const nextPageResp = await sendToTab(botTabId, { type: 'GET_NEXT_PAGE' });
-      pageUrl = nextPageResp?.payload || null;
-
-      if (!pageUrl) {
-        addLog('info', `Collection done: ${totalNew} jobs from ${pageNum} page(s)`);
-        break;
-      }
-
-      pageNum++;
-      await randomDelay(2000, 4000);
-    }
-
-    // ── Phase 2: Apply one by one to all collected jobs ──
-    const batchEnd = jobs.length;
-    if (batchEnd === batchStartIndex) {
-      addLog('info', 'No new jobs to apply, moving to next search URL');
-      await randomDelay(2000, 4000);
-      continue;
-    }
-
-    state = 'applying';
-    broadcastStatus();
-
-    for (let i = batchStartIndex; i < batchEnd; i++) {
-      if (stopRequested) break;
-      if ((state as BotState) === 'paused') {
-        while ((state as BotState) === 'paused' && !stopRequested) {
-          await delay(1000);
-        }
-      }
-      if (stopRequested) break;
-
-      if (settings!.maxApplies > 0 && appliedCount >= settings!.maxApplies) {
-        addLog('info', `Reached max applies limit (${settings!.maxApplies})`);
-        return;
-      }
-
-      currentJobIndex = i;
-      const job = jobs[i];
-
-      if (await registry.isKnown(job.jobKey)) {
-        job.status = 'skipped';
-        job.skipReason = 'already_processed';
-        skippedCount++;
-        continue;
-      }
-
-      addLog('info', `[${appliedCount + 1}${settings!.maxApplies ? '/' + settings!.maxApplies : ''}] Applying: ${job.url}`);
-
-      const result = await applyToJob(job);
-
-      if (result === true) {
-        job.status = 'applied';
-        appliedCount++;
-        await registry.markApplied(job.jobKey);
-        addLog('info', `Applied successfully to ${job.title || job.url}`);
-      } else if (typeof result === 'string') {
-        job.status = 'skipped';
-        job.skipReason = result;
-        skippedCount++;
-        await registry.markSkipped(job.jobKey, result);
-        addLog('warning', `Skipped: ${result}`);
-      } else {
-        job.status = 'failed';
-        failedCount++;
-        addLog('error', `Failed to apply to ${job.url}`);
-      }
-
-      broadcastStatus();
-      await randomDelay(3000, 7000);
-    }
-
-    await randomDelay(2000, 4000);
+    await finishWorkerAndReuseTab(worker);
   }
 }
 
-// ── Apply to Single Job ──
+async function finishWorkerAndReuseTab(worker: TabWorker): Promise<void> {
+  worker.state = 'done';
+  broadcastStatus();
+  if (!stopRequested && state !== 'paused' && jobs.some((j) => j.status === 'pending')) {
+    await delay(1000);
+    await launchNextWorker(worker.tabId);
+  }
+}
 
-async function applyToJob(job: JobEntry): Promise<true | string | false> {
-  if (!botTabId || !settings) return false;
+async function prepareAndFillJob(worker: TabWorker): Promise<void> {
+  if (!settings) return;
+  const job = worker.job;
 
-  // Navigate to job page
-  await navigateTab(botTabId, job.url);
-  await waitForTabLoad(botTabId, 15000);
-  await delay(2000);
-
-  // Check URL is still Indeed
-  const tab = await chrome.tabs.get(botTabId);
-  if (!tab.url || !tab.url.includes('indeed.com')) {
-    return 'redirected_external';
+  let tabId = worker.tabId;
+  if (tabId > 0) {
+    await navigateTab(tabId, job.url);
+    addLog('info', `Reutilizando aba ${tabId}`);
+  } else {
+    const result = await createTab(job.url);
+    tabId = result.tabId;
+    worker.tabId = tabId;
   }
 
-  // Scrape job info
-  const scrapeResponse = await sendToTab(botTabId, { type: 'SCRAPE_JOB' });
+  await waitForTabLoad(tabId, TIMING.tabLoadTimeout);
+  await delay(TIMING.pageLoadDelay);
+
+  const tab = await chrome.tabs.get(tabId);
+  if (!tab.url || !tab.url.includes(URL_PATTERNS.indeedDomain)) {
+    job.status = 'skipped';
+    job.skipReason = 'redirected_external';
+    skippedCount++;
+    await finishWorkerAndReuseTab(worker);
+    return;
+  }
+
+  const scrapeResponse = await sendToTab(tabId, { type: 'SCRAPE_JOB' });
   const jobInfo = scrapeResponse?.payload || {};
   job.title = jobInfo.title;
   job.company = jobInfo.company;
 
-  // Generate tailored CV if enabled
-  let cvPdfData: ArrayBuffer | undefined;       // CV + cover embedded (fallback)
-  let cvOnlyPdfData: ArrayBuffer | undefined;   // CV without cover
+  addLog('info', `[Tab ${tabWorkers.indexOf(worker) + 1}] ${job.title} at ${job.company}`);
+  broadcastStatus();
+
+  let cvPdfData: ArrayBuffer | undefined;
+  let cvOnlyPdfData: ArrayBuffer | undefined;
   let cvFilename: string | undefined;
   let coverPdfData: ArrayBuffer | undefined;
   let coverFilename: string | undefined;
 
-  if (settings.personalization.enabled && settings.backendUrl && jobInfo.description) {
-    try {
-      addLog('info', `Generating tailored CV for: ${jobInfo.title} at ${jobInfo.company}`);
-      const tailored = await generateTailoredContent(
-        jobInfo,
-        settings.personalization.baseCv,
-        settings.personalization.baseCoverLetter,
-        settings.backendUrl
-      );
+  if (generateCvForBatch && settings.personalization.enabled && settings.backendUrl && jobInfo.description) {
+    const safeTitle = (jobInfo.title || 'job')
+      .trim()
+      .replace(/\s+/g, '_')
+      .replace(/[^a-zA-Z0-9_-]/g, '')
+      .substring(0, 60);
 
-      // Filename = job title with spaces→underscores, sanitized
-      const safeTitle = (jobInfo.title || 'job')
-        .trim()
-        .replace(/\s+/g, '_')
-        .replace(/[^a-zA-Z0-9_\-]/g, '')
-        .substring(0, 60);
-
+    const cached = pdfCache.get(safeTitle);
+    if (cached) {
+      addLog('info', `Reusing cached CVs for: ${jobInfo.title}`);
+      cvPdfData = cached.cvPdfData;
+      cvOnlyPdfData = cached.cvOnlyPdfData;
+      coverPdfData = cached.coverPdfData;
+      cvFilename = cached.cvFilename;
+      coverFilename = cached.coverFilename;
+    } else {
       cvFilename = `CV_${safeTitle}.pdf`;
-
-      // Generate CV-only PDF (for when cover letter has its own field)
-      const cvOnlyHtml = fillCvTemplate(tailored, settings.profile);
-      cvOnlyPdfData = await generatePdfFromHtml(cvOnlyHtml, settings.backendUrl, cvFilename);
-      addLog('info', `CV-only PDF generated: ${cvFilename} (${(cvOnlyPdfData.byteLength / 1024).toFixed(0)}KB)`);
-
-      // Generate CV + cover letter embedded PDF (for when no cover letter field exists)
-      const cvWithCoverHtml = fillCvWithCoverTemplate(tailored, settings.profile);
-      cvPdfData = await generatePdfFromHtml(cvWithCoverHtml, settings.backendUrl, `CV_Cover_${safeTitle}.pdf`);
-      addLog('info', `CV+Cover PDF generated (${(cvPdfData.byteLength / 1024).toFixed(0)}KB)`);
-
-      // Generate standalone cover letter PDF (for the dedicated cover letter field)
-      const coverHtml = fillCoverTemplate(tailored, settings.profile);
       coverFilename = `Cover_${safeTitle}.pdf`;
-      coverPdfData = await generatePdfFromHtml(coverHtml, settings.backendUrl, coverFilename);
-      addLog('info', `Cover letter PDF generated: ${coverFilename}`);
-    } catch (err) {
-      addLog('error', `CV generation failed: ${err}`);
+      const cvCoverFilename = `CV_Cover_${safeTitle}.pdf`;
+
+      const [existingCv, existingCvCover, existingCover] = await Promise.all([
+        fetchExistingPdf(settings.backendUrl, cvFilename),
+        fetchExistingPdf(settings.backendUrl, cvCoverFilename),
+        fetchExistingPdf(settings.backendUrl, coverFilename)
+      ]);
+
+      if (existingCv && existingCvCover && existingCover) {
+        addLog('info', `Reusing existing PDFs from output/ for: ${jobInfo.title}`);
+        cvOnlyPdfData = existingCv;
+        cvPdfData = existingCvCover;
+        coverPdfData = existingCover;
+
+        pdfCache.set(safeTitle, {
+          cvPdfData,
+          cvOnlyPdfData,
+          coverPdfData,
+          cvFilename,
+          coverFilename
+        });
+      } else {
+        try {
+          addLog('info', `Generating tailored CV for: ${jobInfo.title}`);
+          const tailored = await generateTailoredContent(
+            jobInfo,
+            settings.personalization.baseCv,
+            settings.personalization.baseCoverLetter,
+            settings.backendUrl
+          );
+
+          const cvOnlyHtml = fillCvTemplate(tailored, settings.profile);
+          cvOnlyPdfData = await generatePdfFromHtml(cvOnlyHtml, settings.backendUrl, cvFilename);
+
+          const cvWithCoverHtml = fillCvWithCoverTemplate(tailored, settings.profile);
+          cvPdfData = await generatePdfFromHtml(
+            cvWithCoverHtml,
+            settings.backendUrl,
+            `CV_Cover_${safeTitle}.pdf`
+          );
+
+          const coverHtml = fillCoverTemplate(tailored, settings.profile);
+          coverPdfData = await generatePdfFromHtml(coverHtml, settings.backendUrl, coverFilename);
+
+          addLog('info', `CVs generated for: ${jobInfo.title}`);
+
+          pdfCache.set(safeTitle, {
+            cvPdfData,
+            cvOnlyPdfData,
+            coverPdfData,
+            cvFilename,
+            coverFilename
+          });
+        } catch (err) {
+          addLog('error', `CV generation failed: ${err}`);
+        }
+      }
     }
   }
 
-  // If personalization is enabled but CV generation failed, abort — don't apply with old CV
-  const cvRequired = settings.personalization.enabled;
+  const cvRequired = generateCvForBatch && settings.personalization.enabled;
   if (cvRequired && !cvPdfData) {
-    addLog('error', 'Dynamic CV required but generation failed (is backend running?). Skipping job.');
-    return 'cv_generation_failed';
+    addLog('error', 'Dynamic CV required but generation failed. Skipping job.');
+    job.status = 'skipped';
+    job.skipReason = 'cv_generation_failed';
+    skippedCount++;
+    await finishWorkerAndReuseTab(worker);
+    return;
   }
 
-  // Click Apply button
-  const applyResponse = await sendToTab(botTabId, { type: 'CLICK_APPLY' });
+  const applyResponse = await sendToTab(tabId, { type: 'CLICK_APPLY' });
   const applyResult = applyResponse?.payload;
 
-  if (applyResult === 'external') return 'external_apply';
-  if (applyResult === 'not_found') return 'no_apply_button';
+  if (applyResult === 'already_applied') {
+    job.status = 'skipped';
+    job.skipReason = 'already_applied';
+    skippedCount++;
+    addLog('info', `Vaga ja aplicada, pulando: ${job.title}`);
+    sendJobFailed(job.jobKey, 'already_applied');
+    await finishWorkerAndReuseTab(worker);
+    return;
+  }
 
-  // Wait for smartapply wizard to load (it opens in an iframe)
-  addLog('info', 'Waiting for wizard to load...');
+  if (applyResult === 'external') {
+    job.status = 'skipped';
+    job.skipReason = 'external_apply';
+    skippedCount++;
+    await registry.markSkipped(job.jobKey, 'external_apply');
+    await finishWorkerAndReuseTab(worker);
+    return;
+  }
+
+  if (applyResult === 'not_found') {
+    job.status = 'skipped';
+    job.skipReason = 'no_apply_button';
+    skippedCount++;
+    await registry.markSkipped(job.jobKey, 'no_apply_button');
+    await finishWorkerAndReuseTab(worker);
+    return;
+  }
+
+  addLog('info', `[Tab ${tabWorkers.indexOf(worker) + 1}] Waiting for wizard...`);
   let wizardReady = false;
   for (let attempt = 0; attempt < 15; attempt++) {
     await delay(2000);
     try {
-      const readyResp = await sendToTab(botTabId, { type: 'WIZARD_READY' });
+      const readyResp = await sendToTab(tabId, { type: 'WIZARD_READY' });
       if (readyResp?.payload?.ready) {
-        addLog('info', `Wizard loaded (buttons: ${readyResp.payload.buttons}, inputs: ${readyResp.payload.inputs})`);
         wizardReady = true;
         break;
       }
-    } catch { /* smartapply script not injected yet */ }
-    addLog('info', `Waiting for wizard... (attempt ${attempt + 1})`);
+    } catch {}
   }
 
   if (!wizardReady) {
     addLog('warning', 'Wizard did not load');
-    return 'wizard_failed';
+    job.status = 'failed';
+    failedCount++;
+    await finishWorkerAndReuseTab(worker);
+    return;
   }
 
-  // Walk through wizard steps
-  const startTime = Date.now();
-  const MAX_STEPS = 10;
-  const TIMEOUT_MS = 60000;
-
-  for (let step = 0; step < MAX_STEPS; step++) {
-    if (Date.now() - startTime > TIMEOUT_MS) {
-      addLog('warning', 'Wizard timeout');
-      break;
-    }
-
-    // Send fill and advance command to smartapply content script.
-    // ArrayBuffer is NOT JSON-serializable, so convert to number[] for message passing.
-    const stepResponse = await sendToTab(botTabId, {
-      type: 'FILL_AND_ADVANCE',
-      payload: {
-        cvData: cvPdfData ? Array.from(new Uint8Array(cvPdfData)) : undefined,
-        cvOnlyData: cvOnlyPdfData ? Array.from(new Uint8Array(cvOnlyPdfData)) : undefined,
-        cvFilename,
-        coverData: coverPdfData ? Array.from(new Uint8Array(coverPdfData)) : undefined,
-        coverFilename,
-        jobTitle: job.title || '',
-        baseProfile: settings?.personalization?.baseProfile || '',
-      },
-    });
-
-    const stepResult = stepResponse?.payload?.action;
-    addLog('info', `Wizard step ${step + 1}: action="${stepResult || 'none'}", payload=${JSON.stringify(stepResponse?.payload || {}).substring(0, 200)}`);
-
-    // If no response (smartapply not ready yet), wait and retry
-    if (!stepResult) {
-      addLog('info', `Wizard step ${step + 1}: no response, retrying in 2s...`);
-      await delay(2000);
-      continue;
-    }
-
-    if (stepResult === 'submitted') {
-      addLog('info', 'Application submitted');
-      await delay(2000);
-      return true;
-    } else if (stepResult === 'needs_input') {
-      // Notify user
-      state = 'waiting_user';
-      broadcastStatus();
-      await notifyUserInput(
-        job.title || 'Unknown job',
-        stepResponse?.payload?.fieldLabel || 'Unknown field',
-        botTabId
-      );
-      addLog('warning', `User input needed: ${stepResponse?.payload?.fieldLabel}`);
-      // Wait for user to fill the field (poll every 5s for up to 5 minutes)
-      for (let wait = 0; wait < 60; wait++) {
-        if (stopRequested) return false;
-        await delay(5000);
-        // Check if field is now filled
-        const retryResponse = await sendToTab(botTabId, {
-          type: 'FILL_AND_ADVANCE',
-          payload: {
-            cvData: cvPdfData ? Array.from(new Uint8Array(cvPdfData)) : undefined,
-            cvOnlyData: cvOnlyPdfData ? Array.from(new Uint8Array(cvOnlyPdfData)) : undefined,
-            cvFilename,
-            coverData: coverPdfData ? Array.from(new Uint8Array(coverPdfData)) : undefined,
-            coverFilename,
-            jobTitle: job.title || '',
-            baseProfile: settings?.personalization?.baseProfile || '',
-          },
-        });
-        if (retryResponse?.payload?.action !== 'needs_input') {
-          state = 'applying';
-          if (retryResponse?.payload?.action === 'submitted') return true;
-          break;
-        }
-      }
-      state = 'applying';
-    } else if (stepResult === 'continued') {
-      await delay(2000);
-      // Check for confirmation page
-      const tabInfo = await chrome.tabs.get(botTabId);
-      const url = tabInfo.url || '';
-      if (url.includes('confirmation') || url.includes('submitted') || url.includes('success')) {
-        return true;
-      }
-    } else if (stepResult === 'none') {
-      // Page may still be loading — wait and retry instead of giving up immediately
-      addLog('info', `No button found at step ${step + 1}, waiting for page load...`);
-      await delay(3000);
-    } else {
-      addLog('warning', `Unknown step result: ${stepResult}`);
-      break;
-    }
-  }
-
-  // Last resort: try one final submit click before giving up
-  addLog('info', 'Wizard loop ended — attempting final submit...');
+  let baseProfile = settings?.personalization?.baseProfile || '';
   try {
-    const finalResp = await sendToTab(botTabId, {
-      type: 'FILL_AND_ADVANCE',
-      payload: { jobTitle: job.title || '', baseProfile: settings?.personalization?.baseProfile || '' },
-    });
-    if (finalResp?.payload?.action === 'submitted') {
-      addLog('info', 'Application submitted (final attempt)');
-      await delay(2000);
-      return true;
+    const res = await fetch(`${settings.backendUrl}/api/settings/profile`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.value) baseProfile = data.value;
     }
-  } catch { /* tab may be closed */ }
+  } catch {}
 
-  return false;
+  worker.cvPayload = {
+    cvData: cvPdfData ? Array.from(new Uint8Array(cvPdfData)) : undefined,
+    cvOnlyData: cvOnlyPdfData ? Array.from(new Uint8Array(cvOnlyPdfData)) : undefined,
+    cvFilename,
+    coverData: coverPdfData ? Array.from(new Uint8Array(coverPdfData)) : undefined,
+    coverFilename,
+    jobTitle: job.title || '',
+    baseProfile,
+  };
+
+  worker.state = 'filling';
+  await sendFillCommand(worker);
+}
+
+const MAX_FILL_DEPTH = LIMITS.maxFillDepth;
+
+async function sendFillCommand(worker: TabWorker, depth = 0): Promise<void> {
+  if (depth >= MAX_FILL_DEPTH) {
+    addLog(
+      'warning',
+      `[Tab ${tabWorkers.indexOf(worker) + 1}] Max fill depth reached (${MAX_FILL_DEPTH}), waiting for user`
+    );
+    worker.state = 'waiting_review';
+    return;
+  }
+  const stepResponse = await sendToTab(worker.tabId, {
+    type: 'FILL_AND_ADVANCE',
+    payload: worker.cvPayload
+  });
+
+  const action = stepResponse?.payload?.action;
+  addLog('info', `[Tab ${tabWorkers.indexOf(worker) + 1}] Fill result: ${action || 'no response'}`);
+
+  if (action === 'filled') {
+    if (applyMode === 'full-auto') {
+      addLog('info', `Auto-submit: ${worker.job.title}`);
+      const submitResp = await sendToTab(worker.tabId, { type: 'FILL_AND_ADVANCE', payload: worker.cvPayload });
+      if (submitResp?.payload?.action === 'submitted') {
+        worker.job.status = 'applied';
+        appliedCount++;
+        sendJobApplied(worker.job.jobKey, worker.job.title || '', worker.job.company || '');
+        addLog('info', `Aplicado automaticamente: ${worker.job.title}`);
+        worker.state = 'done';
+        await finishWorkerAndReuseTab(worker);
+      } else {
+        worker.state = 'waiting_review';
+        addLog('info', `Auto-submit inconclusivo, aguardando revisao: ${worker.job.title}`);
+      }
+    } else {
+      worker.state = 'waiting_review';
+      addLog('info', `Aguardando revisao: ${worker.job.title}`);
+    }
+  } else if (action === 'needs_input') {
+    worker.state = 'waiting_review';
+    addLog(
+      'warning',
+      `[Tab ${tabWorkers.indexOf(worker) + 1}] Needs user input: ${stepResponse?.payload?.fieldLabel}`
+    );
+  } else if (action === 'continued') {
+    await delay(1500);
+    await sendFillCommand(worker, depth + 1);
+  } else {
+    await delay(3000);
+    const retry = await sendToTab(worker.tabId, {
+      type: 'FILL_AND_ADVANCE',
+      payload: worker.cvPayload
+    });
+    if (retry?.payload?.action === 'filled' || retry?.payload?.action === 'needs_input') {
+      worker.state = 'waiting_review';
+    } else {
+      addLog(
+        'warning',
+        `[Tab ${tabWorkers.indexOf(worker) + 1}] Could not fill page, waiting for user`
+      );
+      worker.state = 'waiting_review';
+    }
+  }
+
+  broadcastStatus();
+}
+
+export async function onStepAdvanced(senderTabId: number): Promise<void> {
+  const worker = tabWorkers.find((w) => w.tabId === senderTabId);
+  if (!worker || worker.state === 'done') return;
+
+  addLog('info', `[Tab ${tabWorkers.indexOf(worker) + 1}] User advanced — filling next step`);
+  reportScreenshot(senderTabId).catch(() => {});
+  worker.state = 'filling';
+  broadcastStatus();
+
+  await delay(1500);
+  await sendFillCommand(worker);
+}
+
+export async function onTabSubmitted(senderTabId: number): Promise<void> {
+  const worker = tabWorkers.find((w) => w.tabId === senderTabId);
+  if (!worker || worker.state === 'done') return;
+
+  const job = worker.job;
+  job.status = 'applied';
+  appliedCount++;
+  await registry.markApplied(job.jobKey);
+  addLog('info', `Applied successfully: ${job.title || job.url}`);
+  if (isConnected()) {
+    sendJobApplied(job.jobKey, job.title || '', job.company || '');
+  }
+  reportScreenshot(senderTabId).catch(() => {});
+
+  await finishWorkerAndReuseTab(worker);
+}
+
+export async function onTabSkipped(senderTabId: number): Promise<void> {
+  const worker = tabWorkers.find((w) => w.tabId === senderTabId);
+  if (!worker || worker.state === 'done') return;
+
+  const job = worker.job;
+  job.status = 'skipped';
+  job.skipReason = 'user_skipped';
+  skippedCount++;
+  await registry.markSkipped(job.jobKey, 'user_skipped');
+  addLog('info', `Skipped by user: ${job.title || job.url}`);
+
+  await finishWorkerAndReuseTab(worker);
 }

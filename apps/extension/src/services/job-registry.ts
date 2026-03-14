@@ -27,7 +27,7 @@ export class JobRegistry {
   private async save(): Promise<void> {
     const data: RegistryData = {
       applied: Array.from(this.applied).sort(),
-      skipped: Object.fromEntries(Array.from(this.skipped.entries()).sort()),
+      skipped: Object.fromEntries(Array.from(this.skipped.entries()).sort())
     };
     await chrome.storage.local.set({ [STORAGE_KEY]: data });
   }

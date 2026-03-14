@@ -1,8 +1,8 @@
 """
 Backend API server for the Indeed Auto Apply Chrome extension.
 
-Proxies AI requests to Claude CLI so the extension never needs API keys.
-Run: uvicorn apps.backend.server:app --port 3000
+Proxies AI requests to Claude API so the extension never needs API keys.
+Run: ANTHROPIC_API_KEY=sk-... uvicorn apps.backend.server:app --port 3000
 """
 
 from __future__ import annotations
@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import subprocess
 import tempfile
 
 from fastapi import FastAPI, HTTPException
@@ -18,14 +17,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+from apps.backend.ai_provider import get_provider
+
 app = FastAPI(title="Indeed Bot Backend")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=["*"],
     allow_methods=["POST", "GET"],
     allow_headers=["Content-Type"],
 )
+
+ai = get_provider()
 
 
 # ── Request / Response models ──
@@ -70,20 +73,13 @@ class PdfRequest(BaseModel):
 # ── Helpers ──
 
 
-def _call_claude_cli(prompt: str, max_tokens: int = 4096) -> str:
-    """Call Claude via CLI (uses your terminal's authenticated session)."""
-    # Remove CLAUDECODE env var to avoid nested session detection
-    env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
-    result = subprocess.run(
-        ["claude", "-p", prompt, "--output-format", "text"],
-        capture_output=True,
-        text=True,
-        timeout=180,
-        env=env,
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"Claude CLI failed (exit {result.returncode}): {result.stderr[:500]}")
-    return result.stdout.strip()
+MODEL_FAST = os.getenv("ANTHROPIC_MODEL_FAST", "claude-haiku-4-5-20251001")
+MODEL_SMART = os.getenv("ANTHROPIC_MODEL_SMART", "claude-opus-4-20250514")
+
+
+def _call_claude(prompt: str, max_tokens: int = 4096, model: str = MODEL_FAST) -> str:
+    """Call Claude via the configured AI provider."""
+    return ai.complete(prompt, max_tokens=max_tokens, model=model)
 
 
 # ── Endpoints ──
@@ -91,7 +87,7 @@ def _call_claude_cli(prompt: str, max_tokens: int = 4096) -> str:
 
 @app.post("/api/answer", response_model=AnswerResponse)
 async def answer_question(req: AnswerRequest):
-    """Answer a job application form question using Claude CLI."""
+    """Answer a job application form question using Claude API."""
     prompt_parts = [
         "You are filling out a job application form. Use the CANDIDATE PROFILE below to answer accurately.",
         "RULES:",
@@ -144,7 +140,7 @@ async def answer_question(req: AnswerRequest):
         prompt_parts.append("Reply with ONLY the answer value (short, no explanation, no quotes).")
 
     try:
-        raw = _call_claude_cli("\n".join(prompt_parts))
+        raw = _call_claude("\n".join(prompt_parts), model=MODEL_FAST)
         answer = raw.strip()
 
         if req.options:
@@ -165,7 +161,7 @@ async def answer_question(req: AnswerRequest):
 
 @app.post("/api/tailor")
 async def tailor_cv(req: TailorRequest):
-    """Generate tailored CV/cover letter content using Claude CLI."""
+    """Generate tailored CV/cover letter content using Claude API."""
     desc = req.jobDescription[:4000]
 
     prompt = f"""You are an expert recruiter and CV strategist. Your goal is to produce a HIGH-CONVERSION CV tailored to a specific job posting. The CV must pass ATS (Applicant Tracking Systems) and grab a recruiter's attention in under 10 seconds.
@@ -229,7 +225,7 @@ Return ONLY a JSON object with these exact keys:
 CRITICAL: Return ONLY the raw JSON. No markdown, no explanation, no wrapping."""
 
     try:
-        raw = _call_claude_cli(prompt)
+        raw = _call_claude(prompt, model=MODEL_SMART)
         output = raw.strip()
 
         # Strip markdown fences if present
@@ -280,6 +276,29 @@ async def generate_pdf(req: PdfRequest):
     finally:
         if tmp_path and os.path.exists(tmp_path):
             os.unlink(tmp_path)
+
+
+@app.get("/api/pdf/{filename}")
+async def get_existing_pdf(filename: str):
+    """Return an existing PDF from output/ if it exists."""
+    safe_filename = re.sub(r'[^\w\s\-.]', '', os.path.basename(filename)) or ''
+    if not safe_filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    output_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "output")
+    file_path = os.path.join(output_dir, safe_filename)
+
+    if not os.path.isfile(file_path):
+        raise HTTPException(status_code=404, detail="PDF not found")
+
+    with open(file_path, "rb") as f:
+        pdf_bytes = f.read()
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{safe_filename}"'},
+    )
 
 
 @app.get("/health")
