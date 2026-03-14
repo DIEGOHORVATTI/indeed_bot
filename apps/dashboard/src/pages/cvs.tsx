@@ -1,6 +1,32 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import useSWR, { mutate } from 'swr'
 import { API_URL, fetcher } from '@/lib/api'
+import {
+  Alert,
+  Box,
+  Button,
+  Card,
+  CardContent,
+  Chip,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  FormControl,
+  Grid,
+  IconButton,
+  InputLabel,
+  MenuItem,
+  Select,
+  Stack,
+  TextField,
+  Tooltip,
+  Typography,
+} from '@mui/material'
+import { alpha } from '@mui/material/styles'
+import CloseRounded from '@mui/icons-material/CloseRounded'
+import PersonIcon from '@mui/icons-material/PersonOutlineRounded'
 
 interface CV {
   id: string
@@ -23,19 +49,19 @@ interface Job {
 }
 
 const TEMPLATES = [
-  { id: 'classic', name: 'Clássico', description: 'Layout limpo e profissional, foco em ATS' },
-  { id: 'modern', name: 'Moderno', description: 'Design contemporâneo com sidebar de habilidades' },
-  { id: 'minimal', name: 'Minimalista', description: 'Menos é mais — direto ao ponto' },
+  { id: 'classic', name: 'Classico', description: 'Layout limpo e profissional, foco em ATS' },
+  { id: 'modern', name: 'Moderno', description: 'Design contemporaneo com sidebar de habilidades' },
+  { id: 'minimal', name: 'Minimalista', description: 'Menos e mais — direto ao ponto' },
 ]
 
 const VARIANTS = ['A', 'B', 'C', 'D', 'E']
 
-const VARIANT_COLORS: Record<string, string> = {
-  A: 'bg-info/10 text-[#61F3F3]',
-  B: 'bg-[#8E33FF]/10 text-[#C684FF]',
-  C: 'bg-warning/10 text-[#FFD666]',
-  D: 'bg-success/10 text-[#77ED8B]',
-  E: 'bg-error/10 text-[#FFAC82]',
+const VARIANT_COLORS: Record<string, { bgcolor: string; color: string }> = {
+  A: { bgcolor: alpha('#61F3F3', 0.1), color: '#61F3F3' },
+  B: { bgcolor: alpha('#C684FF', 0.1), color: '#C684FF' },
+  C: { bgcolor: alpha('#FFD666', 0.1), color: '#FFD666' },
+  D: { bgcolor: alpha('#77ED8B', 0.1), color: '#77ED8B' },
+  E: { bgcolor: alpha('#FFAC82', 0.1), color: '#FFAC82' },
 }
 
 const COLOR_PALETTES = [
@@ -49,8 +75,8 @@ const COLOR_PALETTES = [
 
 function swapPaletteColors(html: string, fromId: string, toId: string): string {
   if (fromId === toId) return html
-  const from = COLOR_PALETTES.find(c => c.id === fromId) || COLOR_PALETTES[0]
-  const to = COLOR_PALETTES.find(c => c.id === toId) || COLOR_PALETTES[0]
+  const from = COLOR_PALETTES.find((c) => c.id === fromId) || COLOR_PALETTES[0]
+  const to = COLOR_PALETTES.find((c) => c.id === toId) || COLOR_PALETTES[0]
   const replace = (s: string, find: string, rep: string) => s.split(find).join(rep)
   const hexToRgb = (hex: string) =>
     `${parseInt(hex.slice(1, 3), 16)}, ${parseInt(hex.slice(3, 5), 16)}, ${parseInt(hex.slice(5, 7), 16)}`
@@ -63,72 +89,153 @@ function swapPaletteColors(html: string, fromId: string, toId: string): string {
   return result
 }
 
-const inputClass =
-  'w-full bg-background border border-input rounded px-3 py-2 text-sm text-card-foreground focus:outline-none focus:border-accent focus:ring-1 focus:ring-ring'
-
 function TemplatePreview({ templateId }: { templateId: string }) {
+  const bar = (w: number | string, h: number, color: string) => (
+    <Box sx={{ width: w, height: h, bgcolor: color, borderRadius: 0.25 }} />
+  )
+
   if (templateId === 'classic') {
     return (
-      <div className="w-full h-full bg-white rounded p-3 flex flex-col gap-1.5">
-        <div className="h-3 w-20 bg-gray-800 rounded-sm" />
-        <div className="h-1.5 w-28 bg-gray-300 rounded-sm" />
-        <div className="mt-2 h-0.5 w-full bg-gray-200" />
-        <div className="mt-1 space-y-1">
-          <div className="h-2 w-16 bg-gray-700 rounded-sm" />
-          <div className="h-1.5 w-full bg-gray-200 rounded-sm" />
-          <div className="h-1.5 w-4/5 bg-gray-200 rounded-sm" />
-          <div className="h-1.5 w-full bg-gray-200 rounded-sm" />
-        </div>
-        <div className="mt-2 space-y-1">
-          <div className="h-2 w-20 bg-gray-700 rounded-sm" />
-          <div className="h-1.5 w-full bg-gray-200 rounded-sm" />
-          <div className="h-1.5 w-3/4 bg-gray-200 rounded-sm" />
-        </div>
-      </div>
+      <Box
+        sx={{
+          width: '100%',
+          height: '100%',
+          bgcolor: '#fff',
+          borderRadius: 1,
+          p: 1.5,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 0.75,
+        }}
+      >
+        {bar(80, 12, '#1F2937')}
+        {bar(112, 6, '#D1D5DB')}
+        <Box sx={{ mt: 1, height: 2, width: '100%', bgcolor: '#E5E7EB' }} />
+        <Stack spacing={0.5} sx={{ mt: 0.5 }}>
+          {bar(64, 8, '#374151')}
+          {bar('100%', 6, '#E5E7EB')}
+          {bar('80%', 6, '#E5E7EB')}
+          {bar('100%', 6, '#E5E7EB')}
+        </Stack>
+        <Stack spacing={0.5} sx={{ mt: 1 }}>
+          {bar(80, 8, '#374151')}
+          {bar('100%', 6, '#E5E7EB')}
+          {bar('75%', 6, '#E5E7EB')}
+        </Stack>
+      </Box>
     )
   }
+
   if (templateId === 'modern') {
     return (
-      <div className="w-full h-full bg-white rounded flex overflow-hidden">
-        <div className="w-1/3 bg-gray-800 p-2 flex flex-col gap-1.5">
-          <div className="h-8 w-8 rounded-full bg-gray-600 mx-auto" />
-          <div className="h-1.5 w-full bg-gray-600 rounded-sm" />
-          <div className="mt-2 space-y-1">
-            <div className="h-1.5 w-3/4 bg-gray-500 rounded-sm" />
-            <div className="h-1.5 w-full bg-gray-500 rounded-sm" />
-            <div className="h-1.5 w-2/3 bg-gray-500 rounded-sm" />
-          </div>
-        </div>
-        <div className="flex-1 p-2 flex flex-col gap-1.5">
-          <div className="h-3 w-20 bg-gray-800 rounded-sm" />
-          <div className="h-1.5 w-full bg-gray-200 rounded-sm" />
-          <div className="h-1.5 w-4/5 bg-gray-200 rounded-sm" />
-          <div className="mt-1 h-2 w-16 bg-gray-700 rounded-sm" />
-          <div className="h-1.5 w-full bg-gray-200 rounded-sm" />
-          <div className="h-1.5 w-3/4 bg-gray-200 rounded-sm" />
-        </div>
-      </div>
+      <Box
+        sx={{
+          width: '100%',
+          height: '100%',
+          bgcolor: '#fff',
+          borderRadius: 1,
+          display: 'flex',
+          overflow: 'hidden',
+        }}
+      >
+        <Box
+          sx={{
+            width: '33%',
+            bgcolor: '#1F2937',
+            p: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 0.75,
+            alignItems: 'center',
+          }}
+        >
+          <Box sx={{ width: 32, height: 32, borderRadius: '50%', bgcolor: '#4B5563' }} />
+          {bar('100%', 6, '#4B5563')}
+          <Stack spacing={0.5} sx={{ mt: 1, width: '100%' }}>
+            {bar('75%', 6, '#6B7280')}
+            {bar('100%', 6, '#6B7280')}
+            {bar('66%', 6, '#6B7280')}
+          </Stack>
+        </Box>
+        <Box
+          sx={{
+            flex: 1,
+            p: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 0.75,
+          }}
+        >
+          {bar(80, 12, '#1F2937')}
+          {bar('100%', 6, '#E5E7EB')}
+          {bar('80%', 6, '#E5E7EB')}
+          <Box sx={{ mt: 0.5 }}>{bar(64, 8, '#374151')}</Box>
+          {bar('100%', 6, '#E5E7EB')}
+          {bar('75%', 6, '#E5E7EB')}
+        </Box>
+      </Box>
     )
   }
+
   return (
-    <div className="w-full h-full bg-white rounded p-4 flex flex-col gap-2">
-      <div className="h-4 w-24 bg-gray-900 rounded-sm" />
-      <div className="h-1 w-16 bg-gray-300 rounded-sm" />
-      <div className="mt-3 space-y-2">
-        <div className="h-1.5 w-full bg-gray-200 rounded-sm" />
-        <div className="h-1.5 w-3/5 bg-gray-200 rounded-sm" />
-      </div>
-      <div className="mt-3 space-y-2">
-        <div className="h-1.5 w-full bg-gray-200 rounded-sm" />
-        <div className="h-1.5 w-4/5 bg-gray-200 rounded-sm" />
-      </div>
-    </div>
+    <Box
+      sx={{
+        width: '100%',
+        height: '100%',
+        bgcolor: '#fff',
+        borderRadius: 1,
+        p: 2,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 1,
+      }}
+    >
+      {bar(96, 16, '#111827')}
+      {bar(64, 4, '#D1D5DB')}
+      <Stack spacing={1} sx={{ mt: 1.5 }}>
+        {bar('100%', 6, '#E5E7EB')}
+        {bar('60%', 6, '#E5E7EB')}
+      </Stack>
+      <Stack spacing={1} sx={{ mt: 1.5 }}>
+        {bar('100%', 6, '#E5E7EB')}
+        {bar('80%', 6, '#E5E7EB')}
+      </Stack>
+    </Box>
   )
 }
 
 export default function CvsPage() {
   const { data: cvs, mutate: mutateCvs } = useSWR<CV[]>(`${API_URL}/api/cvs`, fetcher)
   const { data: jobs } = useSWR<Job[]>(`${API_URL}/api/jobs`, fetcher)
+
+  const [profileOpen, setProfileOpen] = useState(false)
+  const [profile, setProfile] = useState('')
+  const [profileSaving, setProfileSaving] = useState(false)
+  const [profileSaved, setProfileSaved] = useState(false)
+
+  useEffect(() => {
+    if (!profileOpen) return
+    fetch(`${API_URL}/api/settings/profile`)
+      .then((r) => r.json())
+      .then((data: { value?: string }) => setProfile(data.value || ''))
+      .catch(() => {})
+  }, [profileOpen])
+
+  const saveProfile = useCallback(async () => {
+    setProfileSaving(true)
+    setProfileSaved(false)
+    try {
+      await fetch(`${API_URL}/api/settings/profile`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: profile }),
+      })
+      setProfileSaved(true)
+      setTimeout(() => setProfileSaved(false), 2000)
+    } finally {
+      setProfileSaving(false)
+    }
+  }, [profile])
 
   const [showGenModal, setShowGenModal] = useState(false)
   const [previewCvId, setPreviewCvId] = useState<string | null>(null)
@@ -161,7 +268,7 @@ export default function CvsPage() {
     return { name: `Variante ${VARIANTS.length + 1}`, variant: VARIANTS[0] }
   }
 
-  const openGenModal = async (templateId?: string) => {
+  const openGenModal = (templateId?: string) => {
     const next = nextVariantName()
     setFormName(next.name)
     setFormVariant(next.variant)
@@ -211,7 +318,7 @@ export default function CvsPage() {
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Excluir este currículo?')) return
+    if (!confirm('Excluir este curriculo?')) return
     await fetch(`${API_URL}/api/cvs/${id}`, { method: 'DELETE' })
     mutate(`${API_URL}/api/cvs`)
     if (previewCvId === id) setPreviewCvId(null)
@@ -245,7 +352,9 @@ export default function CvsPage() {
       })
       mutate(`${API_URL}/api/cvs`)
       mutate(`${API_URL}/api/cvs/${previewCvId}`)
-    } catch {}
+    } catch {
+      /* empty */
+    }
     setSavingPreview(false)
   }
 
@@ -269,6 +378,7 @@ export default function CvsPage() {
       document.body.removeChild(a)
       URL.revokeObjectURL(url)
     } catch {
+      /* empty */
     } finally {
       setDownloading(false)
     }
@@ -282,408 +392,620 @@ export default function CvsPage() {
       )
     : ''
 
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-foreground">Currículos</h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            Gerador de CV com teste A/B — acompanhe qual versão performa melhor
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => mutateCvs()}
-            className="px-3 py-1.5 bg-secondary hover:bg-secondary/80 rounded text-xs font-medium text-secondary-foreground transition-colors"
-          >
-            Atualizar
-          </button>
-          <button
-            onClick={() => openGenModal()}
-            className="px-4 py-1.5 bg-accent hover:bg-accent/80 rounded text-xs font-medium text-accent-foreground transition-colors"
-          >
-            Gerar Novo CV
-          </button>
-        </div>
-      </div>
+  const variantChip = (variant: string) => {
+    const colors = VARIANT_COLORS[variant] ?? { bgcolor: alpha('#919EAB', 0.1), color: '#919EAB' }
+    return (
+      <Chip
+        label={variant}
+        size="small"
+        sx={{ fontWeight: 700, fontSize: 12, bgcolor: colors.bgcolor, color: colors.color }}
+      />
+    )
+  }
 
-      <div>
-        <h3 className="text-sm font-semibold text-card-foreground mb-3">Templates</h3>
-        <div className="flex gap-4 overflow-x-auto pb-2">
+  const paletteCircle = (
+    p: (typeof COLOR_PALETTES)[number],
+    selected: boolean,
+    onClick: () => void,
+    size = 24,
+  ) => (
+    <Tooltip key={p.id} title={p.name}>
+      <Box
+        onClick={onClick}
+        sx={{
+          position: 'relative',
+          width: size,
+          height: size,
+          borderRadius: '50%',
+          bgcolor: p.primary,
+          cursor: 'pointer',
+          transition: 'all 0.15s',
+          outline: selected ? '2px solid' : 'none',
+          outlineColor: 'primary.main',
+          outlineOffset: 2,
+          transform: selected ? 'scale(1.1)' : 'scale(1)',
+          '&:hover': { transform: 'scale(1.1)' },
+        }}
+      >
+        <Box
+          sx={{
+            position: 'absolute',
+            bottom: 0,
+            right: 0,
+            width: size * 0.42,
+            height: size * 0.42,
+            borderRadius: '50%',
+            bgcolor: p.accent,
+            border: '1.5px solid #fff',
+          }}
+        />
+      </Box>
+    </Tooltip>
+  )
+
+  return (
+    <Stack spacing={3} sx={{ maxWidth: 900, mx: 'auto', width: '100%' }}>
+      <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
+        <Box>
+          <Typography variant="h5" fontWeight={700}>
+            Curriculos
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+            Gerador de CV com teste A/B — acompanhe qual versao performa melhor
+          </Typography>
+        </Box>
+        <Stack direction="row" spacing={1}>
+          <Button variant="outlined" size="small" startIcon={<PersonIcon />} onClick={() => setProfileOpen(true)}>
+            Meu Perfil
+          </Button>
+          <Button variant="outlined" size="small" onClick={() => mutateCvs()}>
+            Atualizar
+          </Button>
+          <Button variant="contained" size="small" onClick={() => openGenModal()}>
+            Gerar Novo CV
+          </Button>
+        </Stack>
+      </Stack>
+
+      <Box>
+        <Typography variant="subtitle2" sx={{ mb: 1.5 }}>
+          Templates
+        </Typography>
+        <Stack direction="row" spacing={2} sx={{ overflowX: 'auto', pb: 1 }}>
           {TEMPLATES.map((t) => (
-            <div
-              key={t.id}
-              className="flex-shrink-0 w-[200px] bg-card rounded-lg border border-border/50 overflow-hidden"
-            >
-              <div className="h-[180px] p-2 bg-secondary/50">
+            <Card key={t.id} sx={{ minWidth: 200, width: 200, flexShrink: 0 }}>
+              <Box sx={{ height: 180, p: 1, bgcolor: (th) => alpha(th.palette.grey[500], 0.08) }}>
                 <TemplatePreview templateId={t.id} />
-              </div>
-              <div className="p-3 space-y-1.5">
-                <span className="text-sm font-semibold text-card-foreground">{t.name}</span>
-                <p className="text-xs text-muted-foreground leading-relaxed">{t.description}</p>
-                <button
+              </Box>
+              <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
+                <Typography variant="subtitle2">{t.name}</Typography>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ display: 'block', mt: 0.5, lineHeight: 1.4 }}
+                >
+                  {t.description}
+                </Typography>
+                <Button
+                  variant="contained"
+                  size="small"
                   onClick={() => openGenModal(t.id)}
-                  className="mt-1 px-3 py-1 bg-accent hover:bg-accent/80 rounded text-xs font-medium text-accent-foreground transition-colors"
+                  sx={{ mt: 1 }}
                 >
                   Usar
-                </button>
-              </div>
-            </div>
+                </Button>
+              </CardContent>
+            </Card>
           ))}
-        </div>
-      </div>
+        </Stack>
+      </Box>
 
       {!cvs ? (
-        <div className="text-muted-foreground text-sm">Carregando currículos...</div>
+        <Stack direction="row" spacing={1} alignItems="center" justifyContent="center" sx={{ py: 4 }}>
+          <CircularProgress size={20} />
+          <Typography variant="body2" color="text.secondary">
+            Carregando curriculos...
+          </Typography>
+        </Stack>
       ) : cvs.length === 0 ? (
-        <div className="bg-card rounded-lg p-8 text-center border border-border/50">
-          <p className="text-muted-foreground text-sm">
-            Nenhum currículo gerado ainda. Clique em &apos;Gerar Novo CV&apos; para começar.
-          </p>
-        </div>
+        <Card>
+          <CardContent sx={{ py: 6, textAlign: 'center' }}>
+            <Typography variant="body2" color="text.secondary">
+              Nenhum curriculo gerado ainda. Clique em &apos;Gerar Novo CV&apos; para comecar.
+            </Typography>
+          </CardContent>
+        </Card>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Grid container spacing={2}>
           {cvs.map((cv: CV) => (
-            <div key={cv.id} className="bg-card rounded-lg p-5 border border-border/50 space-y-3">
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="font-semibold text-foreground">{cv.name}</span>
-                  <span
-                    className={`px-2 py-0.5 text-xs font-bold rounded ${VARIANT_COLORS[cv.variant] || 'bg-muted text-muted-foreground'}`}
-                  >
-                    {cv.variant}
-                  </span>
-                </div>
-                <div
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg ${cv.score > 0 ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground'}`}
-                >
-                  <span className="text-lg font-bold">{cv.score}</span>
-                  <button
-                    onClick={() => handleScore(cv.id)}
-                    className="text-xs font-bold hover:opacity-70 transition-opacity"
-                    title="Incrementar score"
-                  >
-                    +1
-                  </button>
-                </div>
-              </div>
+            <Grid key={cv.id} size={{ xs: 12, lg: 6 }}>
+              <Card>
+                <CardContent sx={{ p: 2.5, '&:last-child': { pb: 2.5 } }}>
+                  <Stack spacing={1.5}>
+                    <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
+                      <Stack direction="row" spacing={1} alignItems="center">
+                        <Typography variant="subtitle2">{cv.name}</Typography>
+                        {variantChip(cv.variant)}
+                      </Stack>
+                      <Box
+                        sx={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 0.75,
+                          px: 1.5,
+                          py: 0.5,
+                          borderRadius: 1,
+                          bgcolor: cv.score > 0
+                            ? (t) => alpha(t.palette.success.main, 0.1)
+                            : (t) => alpha(t.palette.grey[500], 0.1),
+                          color: cv.score > 0 ? 'success.main' : 'text.secondary',
+                        }}
+                      >
+                        <Typography variant="body1" fontWeight={700}>
+                          {cv.score}
+                        </Typography>
+                        <Typography
+                          variant="caption"
+                          fontWeight={700}
+                          onClick={() => handleScore(cv.id)}
+                          sx={{
+                            cursor: 'pointer',
+                            '&:hover': { opacity: 0.7 },
+                            transition: 'opacity 0.2s',
+                          }}
+                        >
+                          +1
+                        </Typography>
+                      </Box>
+                    </Stack>
 
-              {cv.jobTitle && (
-                <p className="text-xs text-muted-foreground">
-                  Para: {cv.jobTitle}
-                  {cv.jobCompany ? ` @ ${cv.jobCompany}` : ''}
-                </p>
-              )}
+                    {cv.jobTitle && (
+                      <Typography variant="caption" color="text.secondary">
+                        Para: {cv.jobTitle}
+                        {cv.jobCompany ? ` @ ${cv.jobCompany}` : ''}
+                      </Typography>
+                    )}
 
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">
-                  {new Date(cv.createdAt).toLocaleDateString('pt-BR')}
-                </span>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setPreviewCvId(cv.id)}
-                    className="px-3 py-1 bg-secondary hover:bg-muted rounded text-xs font-medium text-secondary-foreground transition-colors"
-                  >
-                    Visualizar
-                  </button>
-                  <button
-                    onClick={() => handleDelete(cv.id)}
-                    className="px-3 py-1 bg-error/10 hover:bg-error/20 rounded text-xs font-medium text-error transition-colors"
-                  >
-                    Excluir
-                  </button>
-                </div>
-              </div>
-            </div>
+                    <Stack direction="row" justifyContent="space-between" alignItems="center">
+                      <Typography variant="caption" color="text.secondary">
+                        {new Date(cv.createdAt).toLocaleDateString('pt-BR')}
+                      </Typography>
+                      <Stack direction="row" spacing={1}>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          onClick={() => setPreviewCvId(cv.id)}
+                        >
+                          Visualizar
+                        </Button>
+                        <Button
+                          size="small"
+                          onClick={() => handleDelete(cv.id)}
+                          sx={{
+                            color: 'error.main',
+                            bgcolor: (t) => alpha(t.palette.error.main, 0.08),
+                            '&:hover': {
+                              bgcolor: (t) => alpha(t.palette.error.main, 0.16),
+                            },
+                          }}
+                        >
+                          Excluir
+                        </Button>
+                      </Stack>
+                    </Stack>
+                  </Stack>
+                </CardContent>
+              </Card>
+            </Grid>
           ))}
-        </div>
+        </Grid>
       )}
 
-      {showGenModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-          <div className="bg-card rounded-xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-border/50">
-            <div className="flex items-center justify-between mb-5">
-              <h3 className="text-lg font-bold text-foreground">Gerar Novo CV</h3>
-              <button
-                onClick={() => setShowGenModal(false)}
-                className="text-muted-foreground hover:text-foreground text-xl leading-none"
-              >
-                &times;
-              </button>
-            </div>
+      <Dialog
+        open={showGenModal}
+        onClose={() => setShowGenModal(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{ sx: { maxHeight: '90vh' } }}
+      >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Typography variant="h6" fontWeight={700}>
+            Gerar Novo CV
+          </Typography>
+          <IconButton size="small" onClick={() => setShowGenModal(false)}>
+            <CloseRounded fontSize="small" />
+          </IconButton>
+        </DialogTitle>
 
-            <div className="space-y-4">
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Nome do CV</label>
-                <input
-                  type="text"
-                  value={formName}
-                  onChange={(e) => setFormName(e.target.value)}
-                  placeholder="CV para Vaga X — Variante A"
-                  className={`${inputClass} placeholder:text-muted-foreground/50`}
-                />
-              </div>
+        <DialogContent dividers>
+          <Stack spacing={2.5}>
+            <TextField
+              label="Nome do CV"
+              size="small"
+              fullWidth
+              value={formName}
+              onChange={(e) => setFormName(e.target.value)}
+              placeholder="CV para Vaga X — Variante A"
+            />
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">Variante</label>
-                  <select
-                    value={formVariant}
-                    onChange={(e) => setFormVariant(e.target.value)}
-                    className={inputClass}
-                  >
-                    {VARIANTS.map((v) => (
-                      <option key={v} value={v}>
-                        {v}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">Template</label>
-                  <select
-                    value={formTemplate}
-                    onChange={(e) => setFormTemplate(e.target.value)}
-                    className={inputClass}
-                  >
-                    {TEMPLATES.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Paleta de Cores</label>
-                <div className="flex gap-2 overflow-x-auto pb-1">
-                  {COLOR_PALETTES.map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => setFormPalette(p.id)}
-                      className={`flex-shrink-0 flex items-center gap-2 px-3 py-2 rounded-lg border transition-all ${
-                        formPalette === p.id
-                          ? 'border-accent bg-accent/10 ring-1 ring-accent'
-                          : 'border-border/50 bg-secondary/30 hover:bg-secondary/60'
-                      }`}
-                    >
-                      <div className="relative w-6 h-6 flex-shrink-0">
-                        <div
-                          className="w-6 h-6 rounded-full"
-                          style={{ backgroundColor: p.primary }}
-                        />
-                        <div
-                          className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-card"
-                          style={{ backgroundColor: p.accent }}
-                        />
-                      </div>
-                      <div className="text-left">
-                        <div className="text-xs font-medium text-card-foreground leading-tight">{p.name}</div>
-                        <div className="text-[10px] text-muted-foreground leading-tight">{p.desc}</div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">
-                  Instrucoes adicionais <span className="text-muted-foreground/50">(opcional)</span>
-                </label>
-                <textarea
-                  value={formExtraInstructions}
-                  onChange={(e) => setFormExtraInstructions(e.target.value)}
-                  placeholder="Ex: Tenho disponibilidade imediata, mencionar experiencia com Kubernetes, destacar lideranca de equipes remotas..."
-                  className={`${inputClass} placeholder:text-muted-foreground/50 min-h-[80px] resize-y`}
-                />
-              </div>
-
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">
-                  Descrição da Vaga <span className="text-muted-foreground/50">(opcional)</span>
-                </label>
-                <textarea
-                  value={formJobDesc}
-                  onChange={(e) => setFormJobDesc(e.target.value)}
-                  placeholder="Cole a descrição completa da vaga alvo..."
-                  className={`${inputClass} placeholder:text-muted-foreground/50 min-h-[200px] resize-y`}
-                />
-              </div>
-
-              <div>
-                <label className="text-xs text-muted-foreground mb-1 block">
-                  Vaga vinculada <span className="text-muted-foreground/50">(opcional)</span>
-                </label>
-                <select
-                  value={formJobId}
-                  onChange={(e) => handleJobSelect(e.target.value)}
-                  className={inputClass}
+            <Grid container spacing={2}>
+              <Grid size={{ xs: 6 }}>
+                <TextField
+                  select
+                  label="Variante"
+                  size="small"
+                  fullWidth
+                  value={formVariant}
+                  onChange={(e) => setFormVariant(e.target.value)}
                 >
-                  <option value="">Nenhuma</option>
-                  {jobs?.map((j: Job) => (
-                    <option key={j.id} value={j.id}>
-                      {j.title} — {j.company}
-                    </option>
+                  {VARIANTS.map((v) => (
+                    <MenuItem key={v} value={v}>
+                      {v}
+                    </MenuItem>
                   ))}
-                </select>
-              </div>
-
-              {genError && (
-                <p className="text-xs text-error bg-error/10 rounded px-3 py-2">{genError}</p>
-              )}
-
-              <button
-                onClick={handleGenerate}
-                disabled={generating}
-                className="w-full py-2 bg-accent hover:bg-accent/80 rounded text-sm font-medium text-accent-foreground disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
-              >
-                {generating ? (
-                  <>
-                    <span className="inline-block w-4 h-4 border-2 border-accent-foreground/30 border-t-accent-foreground rounded-full animate-spin" />
-                    Gerando currículo com IA...
-                  </>
-                ) : (
-                  'Gerar CV com IA'
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {previewCvId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-          <div className="bg-card rounded-xl max-w-5xl w-full max-h-[90vh] flex flex-col border border-border/50 overflow-hidden">
-            <div className="flex items-center justify-between px-6 pt-6 pb-4">
-              <div className="flex items-center gap-3">
-                <h3 className="text-lg font-bold text-foreground">
-                  {previewCv?.name || 'Carregando...'}
-                </h3>
-                {previewCv?.variant && (
-                  <span
-                    className={`px-2 py-0.5 text-xs font-bold rounded ${VARIANT_COLORS[previewCv.variant] || 'bg-muted text-muted-foreground'}`}
-                  >
-                    {previewCv.variant}
-                  </span>
-                )}
-                {previewCv && (
-                  <span
-                    className={`px-2 py-0.5 text-xs font-bold rounded ${previewCv.score > 0 ? 'bg-success/10 text-success' : 'bg-muted text-muted-foreground'}`}
-                  >
-                    Score: {previewCv.score}
-                  </span>
-                )}
-              </div>
-              <button
-                onClick={() => setPreviewCvId(null)}
-                className="text-muted-foreground hover:text-foreground text-xl leading-none"
-              >
-                &times;
-              </button>
-            </div>
-
-            <div className="flex items-center gap-4 mx-6 mb-4 p-3 bg-secondary/30 rounded-lg border border-border/50 shadow-sm">
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs text-muted-foreground mr-1">Paleta:</span>
-                {COLOR_PALETTES.map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => setPreviewPalette(p.id)}
-                    title={p.name}
-                    className={`relative w-6 h-6 rounded-full transition-all ${
-                      previewPalette === p.id ? 'ring-2 ring-accent ring-offset-1 ring-offset-card scale-110' : 'hover:scale-110'
-                    }`}
-                    style={{ backgroundColor: p.primary }}
-                  >
-                    <span
-                      className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border border-white"
-                      style={{ backgroundColor: p.accent }}
-                    />
-                  </button>
-                ))}
-              </div>
-
-              <div className="h-5 w-px bg-border/50" />
-
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">Template:</span>
-                <select
-                  value={previewTemplate}
-                  onChange={(e) => setPreviewTemplate(e.target.value)}
-                  className="bg-background border border-input rounded px-2 py-1 text-xs text-card-foreground focus:outline-none focus:border-accent"
+                </TextField>
+              </Grid>
+              <Grid size={{ xs: 6 }}>
+                <TextField
+                  select
+                  label="Template"
+                  size="small"
+                  fullWidth
+                  value={formTemplate}
+                  onChange={(e) => setFormTemplate(e.target.value)}
                 >
                   {TEMPLATES.map((t) => (
-                    <option key={t.id} value={t.id}>{t.name}</option>
+                    <MenuItem key={t.id} value={t.id}>
+                      {t.name}
+                    </MenuItem>
                   ))}
-                </select>
-              </div>
+                </TextField>
+              </Grid>
+            </Grid>
 
-              <button
-                onClick={handleSavePreview}
-                disabled={savingPreview}
-                className="ml-auto px-3 py-1.5 bg-accent hover:bg-accent/80 rounded text-xs font-medium text-accent-foreground disabled:opacity-50 transition-colors"
-              >
-                {savingPreview ? 'Salvando...' : 'Salvar alteracoes'}
-              </button>
-            </div>
+            <Box>
+              <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+                Paleta de Cores
+              </Typography>
+              <Stack direction="row" spacing={1} sx={{ overflowX: 'auto', pb: 0.5 }}>
+                {COLOR_PALETTES.map((p) => (
+                  <Box
+                    key={p.id}
+                    onClick={() => setFormPalette(p.id)}
+                    sx={{
+                      flexShrink: 0,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 1,
+                      px: 1.5,
+                      py: 1,
+                      borderRadius: 1.5,
+                      border: 1,
+                      borderColor: formPalette === p.id ? 'primary.main' : 'divider',
+                      bgcolor:
+                        formPalette === p.id
+                          ? (t) => alpha(t.palette.primary.main, 0.08)
+                          : 'transparent',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                      '&:hover': {
+                        bgcolor: (t) => alpha(t.palette.primary.main, 0.04),
+                      },
+                    }}
+                  >
+                    <Box sx={{ position: 'relative', width: 24, height: 24, flexShrink: 0 }}>
+                      <Box sx={{ width: 24, height: 24, borderRadius: '50%', bgcolor: p.primary }} />
+                      <Box
+                        sx={{
+                          position: 'absolute',
+                          bottom: -2,
+                          right: -2,
+                          width: 12,
+                          height: 12,
+                          borderRadius: '50%',
+                          bgcolor: p.accent,
+                          border: 2,
+                          borderColor: 'background.paper',
+                        }}
+                      />
+                    </Box>
+                    <Box>
+                      <Typography
+                        variant="caption"
+                        fontWeight={500}
+                        sx={{ lineHeight: 1.2, display: 'block' }}
+                      >
+                        {p.name}
+                      </Typography>
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{ fontSize: 10, lineHeight: 1.2, display: 'block' }}
+                      >
+                        {p.desc}
+                      </Typography>
+                    </Box>
+                  </Box>
+                ))}
+              </Stack>
+            </Box>
 
-            <div className="flex-1 min-h-0 mx-6 mb-0">
-              {previewCv?.htmlContent ? (
-                <div className="h-full rounded-lg border border-border/30 shadow-[0_2px_12px_rgba(0,0,0,0.25)] overflow-hidden">
-                  <iframe
-                    srcDoc={previewHtml}
-                    className="w-full h-[65vh] bg-white"
-                    title={previewCv.name}
-                  />
-                </div>
-              ) : (
-                <div className="flex items-center justify-center h-[65vh] text-muted-foreground text-sm">
-                  Carregando conteudo...
-                </div>
-              )}
-            </div>
+            <TextField
+              label="Instrucoes adicionais (opcional)"
+              size="small"
+              fullWidth
+              multiline
+              minRows={3}
+              value={formExtraInstructions}
+              onChange={(e) => setFormExtraInstructions(e.target.value)}
+              placeholder="Ex: Tenho disponibilidade imediata, mencionar experiencia com Kubernetes, destacar lideranca de equipes remotas..."
+            />
 
-            <div className="flex items-center justify-between bg-card px-6 py-4 border-t border-border/50">
-              <div className="flex gap-2">
-                <button
-                  onClick={() => handleScore(previewCvId)}
-                  className="px-4 py-1.5 bg-success/10 hover:bg-success/20 rounded text-xs font-medium text-success transition-colors"
-                >
-                  +1 Performance
-                </button>
-                <button
-                  onClick={() => handleDelete(previewCvId)}
-                  className="px-4 py-1.5 bg-error/10 hover:bg-error/20 rounded text-xs font-medium text-error transition-colors"
-                >
-                  Excluir
-                </button>
-              </div>
-              <button
-                onClick={handleDownload}
-                disabled={downloading || !previewHtml}
-                className="flex items-center gap-2 px-5 py-2 bg-accent hover:bg-accent/80 rounded-lg text-sm font-semibold text-accent-foreground disabled:opacity-50 transition-colors"
-              >
-                {downloading ? (
-                  <>
-                    <span className="inline-block w-4 h-4 border-2 border-accent-foreground/30 border-t-accent-foreground rounded-full animate-spin" />
-                    Baixando...
-                  </>
-                ) : (
-                  <>
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" className="flex-shrink-0">
-                      <path d="M8 1.5v9m0 0L4.5 7M8 10.5l3.5-3.5M2.5 13h11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                    Baixar PDF
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+            <TextField
+              label="Descricao da Vaga (opcional)"
+              size="small"
+              fullWidth
+              multiline
+              minRows={6}
+              value={formJobDesc}
+              onChange={(e) => setFormJobDesc(e.target.value)}
+              placeholder="Cole a descricao completa da vaga alvo..."
+            />
+
+            <TextField
+              select
+              label="Vaga vinculada (opcional)"
+              size="small"
+              fullWidth
+              value={formJobId}
+              onChange={(e) => handleJobSelect(e.target.value)}
+            >
+              <MenuItem value="">Nenhuma</MenuItem>
+              {jobs?.map((j: Job) => (
+                <MenuItem key={j.id} value={j.id}>
+                  {j.title} — {j.company}
+                </MenuItem>
+              ))}
+            </TextField>
+
+            {genError && <Alert severity="error">{genError}</Alert>}
+          </Stack>
+        </DialogContent>
+
+        <DialogActions sx={{ px: 3, py: 2 }}>
+          <Button
+            variant="contained"
+            fullWidth
+            onClick={handleGenerate}
+            disabled={generating}
+            startIcon={generating ? <CircularProgress size={16} color="inherit" /> : undefined}
+          >
+            {generating ? 'Gerando curriculo com IA...' : 'Gerar CV com IA'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={!!previewCvId}
+        onClose={() => setPreviewCvId(null)}
+        maxWidth="lg"
+        fullWidth
+        PaperProps={{
+          sx: { height: '90vh', display: 'flex', flexDirection: 'column' },
+        }}
+      >
+        <Box sx={{ px: 3, pt: 3, pb: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Typography variant="h6" fontWeight={700}>
+              {previewCv?.name || 'Carregando...'}
+            </Typography>
+            {previewCv?.variant && variantChip(previewCv.variant)}
+            {previewCv && (
+              <Chip
+                label={`Score: ${previewCv.score}`}
+                size="small"
+                sx={{
+                  fontWeight: 700,
+                  bgcolor: previewCv.score > 0
+                    ? (t) => alpha(t.palette.success.main, 0.1)
+                    : undefined,
+                  color: previewCv.score > 0 ? 'success.main' : 'text.secondary',
+                }}
+              />
+            )}
+          </Stack>
+          <IconButton size="small" onClick={() => setPreviewCvId(null)}>
+            <CloseRounded fontSize="small" />
+          </IconButton>
+        </Box>
+
+        <Box
+          sx={{
+            mx: 3,
+            mb: 2,
+            p: 1.5,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 2,
+            bgcolor: (t) => alpha(t.palette.grey[500], 0.06),
+            borderRadius: 1.5,
+            border: 1,
+            borderColor: 'divider',
+          }}
+        >
+          <Stack direction="row" spacing={0.5} alignItems="center">
+            <Typography variant="caption" color="text.secondary" sx={{ mr: 0.5 }}>
+              Paleta:
+            </Typography>
+            {COLOR_PALETTES.map((p) =>
+              paletteCircle(p, previewPalette === p.id, () => setPreviewPalette(p.id)),
+            )}
+          </Stack>
+
+          <Box sx={{ height: 20, width: '1px', bgcolor: 'divider' }} />
+
+          <FormControl size="small" sx={{ minWidth: 120 }}>
+            <InputLabel>Template</InputLabel>
+            <Select
+              value={previewTemplate}
+              onChange={(e) => setPreviewTemplate(e.target.value)}
+              label="Template"
+            >
+              {TEMPLATES.map((t) => (
+                <MenuItem key={t.id} value={t.id}>
+                  {t.name}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          <Button
+            variant="contained"
+            size="small"
+            onClick={handleSavePreview}
+            disabled={savingPreview}
+            sx={{ ml: 'auto' }}
+          >
+            {savingPreview ? 'Salvando...' : 'Salvar alteracoes'}
+          </Button>
+        </Box>
+
+        <Box sx={{ flex: 1, minHeight: 0, mx: 3 }}>
+          {previewCv?.htmlContent ? (
+            <Box
+              sx={{
+                height: '100%',
+                borderRadius: 2,
+                border: 1,
+                borderColor: 'divider',
+                boxShadow: '0 2px 12px rgba(0,0,0,0.25)',
+                overflow: 'hidden',
+              }}
+            >
+              <Box
+                component="iframe"
+                srcDoc={previewHtml}
+                title={previewCv.name}
+                sx={{ width: '100%', height: '100%', border: 'none', bgcolor: '#fff' }}
+              />
+            </Box>
+          ) : (
+            <Stack
+              alignItems="center"
+              justifyContent="center"
+              sx={{ height: '100%' }}
+              spacing={1}
+              direction="row"
+            >
+              <CircularProgress size={20} />
+              <Typography variant="body2" color="text.secondary">
+                Carregando conteudo...
+              </Typography>
+            </Stack>
+          )}
+        </Box>
+
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            px: 3,
+            py: 2,
+            borderTop: 1,
+            borderColor: 'divider',
+          }}
+        >
+          <Stack direction="row" spacing={1}>
+            <Button
+              size="small"
+              onClick={() => handleScore(previewCvId!)}
+              sx={{
+                color: 'success.main',
+                bgcolor: (t) => alpha(t.palette.success.main, 0.08),
+                '&:hover': { bgcolor: (t) => alpha(t.palette.success.main, 0.16) },
+              }}
+            >
+              +1 Performance
+            </Button>
+            <Button
+              size="small"
+              onClick={() => handleDelete(previewCvId!)}
+              sx={{
+                color: 'error.main',
+                bgcolor: (t) => alpha(t.palette.error.main, 0.08),
+                '&:hover': { bgcolor: (t) => alpha(t.palette.error.main, 0.16) },
+              }}
+            >
+              Excluir
+            </Button>
+          </Stack>
+          <Button
+            variant="contained"
+            onClick={handleDownload}
+            disabled={downloading || !previewHtml}
+            startIcon={downloading ? <CircularProgress size={16} color="inherit" /> : undefined}
+          >
+            {downloading ? 'Baixando...' : 'Baixar PDF'}
+          </Button>
+        </Box>
+      </Dialog>
+
+      <Dialog open={profileOpen} onClose={() => setProfileOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle>Meu Perfil</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Escreva tudo sobre voce: nome, e-mail, telefone, localizacao, links, experiencia,
+            educacao, habilidades, idiomas. A IA vai extrair o que precisar para preencher
+            formularios e gerar CVs.
+          </Typography>
+          <TextField
+            multiline
+            rows={20}
+            fullWidth
+            value={profile}
+            onChange={(e) => setProfile(e.target.value)}
+            placeholder={[
+              'Diego Horvatti',
+              'diego@email.com',
+              '+55 11 99999-9999',
+              'Sao Paulo, Brazil',
+              '',
+              'LinkedIn: https://linkedin.com/in/diegohorvatti',
+              'GitHub: https://github.com/diegohorvatti',
+              '',
+              '## Resumo',
+              'Desenvolvedor Full Stack Senior com 6+ anos de experiencia...',
+              '',
+              '## Experiencia',
+              '**Senior Developer** - Company X (2022-Presente)',
+              '- Microservicos com Node.js, TypeScript',
+              '',
+              '## Educacao',
+              'Ciencia da Computacao - Universidade ABC (2018-2022)',
+              '',
+              '## Habilidades',
+              'TypeScript, React, Node.js, Python, PostgreSQL, Docker, AWS',
+              '',
+              '## Idiomas',
+              'Portugues (nativo), Ingles (fluente)',
+            ].join('\n')}
+            spellCheck={false}
+            sx={{ '& .MuiInputBase-root': { fontFamily: 'monospace', fontSize: 14 } }}
+          />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          {profileSaved && (
+            <Typography variant="caption" color="success.main" sx={{ mr: 1 }}>
+              Salvo
+            </Typography>
+          )}
+          <Button onClick={() => setProfileOpen(false)} color="inherit">Fechar</Button>
+          <Button variant="contained" onClick={saveProfile} disabled={profileSaving}>
+            {profileSaving ? 'Salvando...' : 'Salvar'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Stack>
   )
 }
