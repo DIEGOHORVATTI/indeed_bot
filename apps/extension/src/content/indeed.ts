@@ -14,7 +14,16 @@ function isExternalApplyButton(btn: Element): boolean {
   return EXTERNAL_APPLY_KEYWORDS.some((kw) => combined.includes(kw));
 }
 
-function findAndClickApply(): 'clicked' | 'external' | 'not_found' {
+function findAndClickApply(): 'clicked' | 'external' | 'not_found' | 'already_applied' {
+  const appliedWidget = document.querySelector('.indeed-apply-status-applied');
+  if (appliedWidget) return 'already_applied';
+
+  const applyBtn = document.querySelector('#indeedApplyButton') as HTMLButtonElement | null;
+  if (applyBtn?.disabled) return 'already_applied';
+
+  const btnText = applyBtn?.textContent?.toLowerCase() || '';
+  if (btnText.includes('enviado') || btnText.includes('applied')) return 'already_applied';
+
   const allBtns = findAll('button', document);
   for (const btn of allBtns) {
     if (isVisible(btn) && isExternalApplyButton(btn)) {

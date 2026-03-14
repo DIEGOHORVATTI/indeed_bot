@@ -50,6 +50,7 @@ interface TabWorker {
 }
 
 let state: BotState = 'idle';
+let applyMode: 'semi-auto' | 'full-auto' = 'semi-auto';
 let appliedCount = 0;
 let skippedCount = 0;
 let failedCount = 0;
@@ -240,6 +241,7 @@ export async function applySelectedJobs(
   currentSearchIndex = 0;
   totalSearchUrls = 0;
   generateCvForBatch = generateCv;
+  applyMode = mode;
 
   await registry.load();
   await cache.load();
@@ -481,6 +483,16 @@ async function prepareAndFillJob(worker: TabWorker): Promise<void> {
   const applyResponse = await sendToTab(tabId, { type: 'CLICK_APPLY' });
   const applyResult = applyResponse?.payload;
 
+  if (applyResult === 'already_applied') {
+    job.status = 'skipped';
+    job.skipReason = 'already_applied';
+    skippedCount++;
+    addLog('info', `Vaga ja aplicada, pulando: ${job.title}`);
+    sendJobFailed(job.jobKey, 'already_applied');
+    await finishWorkerAndReuseTab(worker);
+    return;
+  }
+
   if (applyResult === 'external') {
     job.status = 'skipped';
     job.skipReason = 'external_apply';
@@ -563,11 +575,24 @@ async function sendFillCommand(worker: TabWorker, depth = 0): Promise<void> {
   addLog('info', `[Tab ${tabWorkers.indexOf(worker) + 1}] Fill result: ${action || 'no response'}`);
 
   if (action === 'filled') {
-    worker.state = 'waiting_review';
-    addLog(
-      'info',
-      `[Tab ${tabWorkers.indexOf(worker) + 1}] Waiting for user review — ${worker.job.title}`
-    );
+    if (applyMode === 'full-auto') {
+      addLog('info', `Auto-submit: ${worker.job.title}`);
+      const submitResp = await sendToTab(worker.tabId, { type: 'FILL_AND_ADVANCE', payload: worker.cvPayload });
+      if (submitResp?.payload?.action === 'submitted') {
+        worker.job.status = 'applied';
+        appliedCount++;
+        sendJobApplied(worker.job.jobKey, worker.job.title || '', worker.job.company || '');
+        addLog('info', `Aplicado automaticamente: ${worker.job.title}`);
+        worker.state = 'done';
+        await finishWorkerAndReuseTab(worker);
+      } else {
+        worker.state = 'waiting_review';
+        addLog('info', `Auto-submit inconclusivo, aguardando revisao: ${worker.job.title}`);
+      }
+    } else {
+      worker.state = 'waiting_review';
+      addLog('info', `Aguardando revisao: ${worker.job.title}`);
+    }
   } else if (action === 'needs_input') {
     worker.state = 'waiting_review';
     addLog(
