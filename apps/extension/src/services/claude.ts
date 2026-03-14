@@ -89,9 +89,42 @@ export async function askClaudeForAnswer(
   }
 }
 
-/**
- * Generate tailored CV/cover letter content via backend.
- */
+export interface BatchField {
+  id: string;
+  question: string;
+  options?: string[];
+  constraints?: BackendAnswerRequest['constraints'];
+}
+
+export interface BatchResult {
+  answer: string | null;
+  missing: boolean;
+}
+
+export async function askClaudeBatch(
+  fields: BatchField[],
+  jobTitle: string,
+  backendUrl: string,
+  baseProfile?: string
+): Promise<Record<string, BatchResult> | null> {
+  if (!backendUrl || fields.length === 0) return null;
+
+  try {
+    const response = await fetch(`${backendUrl}/api/answer-batch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fields, jobTitle, baseProfile })
+    });
+
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data.results || null;
+  } catch {
+    return null;
+  }
+}
+
+
 export async function generateTailoredContent(
   jobInfo: { title: string; company: string; description: string },
   baseCv: string,

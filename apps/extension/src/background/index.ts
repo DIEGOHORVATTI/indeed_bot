@@ -17,7 +17,9 @@ import {
   onTabSubmitted,
   onTabSkipped
 } from './orchestrator';
-import { askClaudeForAnswer } from '../services/claude';
+import { askClaudeForAnswer, askClaudeBatch } from '../services/claude';
+import type { BatchField } from '../services/claude';
+import { sendMissingFields } from './ws-bridge';
 import { setupNotificationListeners } from '../utils/notifications';
 import { initBridge, onCommand, sendLog } from './ws-bridge';
 import type { BackendMessage } from './ws-bridge';
@@ -193,7 +195,16 @@ async function handleMessage(
           return;
         }
 
-        const profileContext = baseProfile || settings.personalization?.baseProfile || '';
+        let profileContext = baseProfile || settings.personalization?.baseProfile || '';
+        if (!profileContext || profileContext.includes('- Nome completo:\n')) {
+          try {
+            const res = await fetch(`${settings.backendUrl}/api/settings/profile`);
+            if (res.ok) {
+              const data = await res.json();
+              if (data.value) profileContext = data.value;
+            }
+          } catch {}
+        }
         const claudeAnswer = await askClaudeForAnswer(
           question,
           options,
@@ -210,6 +221,47 @@ async function handleMessage(
 
         sendResponse({ payload: { answer: claudeAnswer } });
       }
+      break;
+    }
+
+    case 'ASK_CLAUDE_BATCH': {
+      const { fields, jobTitle: batchJobTitle, baseProfile: batchProfile } = message.payload || {};
+      if (!fields?.length) {
+        sendResponse({ payload: { results: null } });
+        break;
+      }
+      const batchSettings = await getSettings();
+      if (!batchSettings.backendUrl) {
+        sendResponse({ payload: { results: null } });
+        break;
+      }
+      let batchProfileCtx = batchProfile || batchSettings.personalization?.baseProfile || '';
+      if (!batchProfileCtx || batchProfileCtx.includes('- Nome completo:\n')) {
+        try {
+          const res = await fetch(`${batchSettings.backendUrl}/api/settings/profile`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.value) batchProfileCtx = data.value;
+          }
+        } catch {}
+      }
+      const batchResults = await askClaudeBatch(
+        fields as BatchField[],
+        batchJobTitle || '',
+        batchSettings.backendUrl,
+        batchProfileCtx
+      );
+      sendResponse({ payload: { results: batchResults } });
+      break;
+    }
+
+    case 'MISSING_FIELDS': {
+      const { jobTitle: mfTitle, fields: mfFields } = message.payload || {};
+      if (mfTitle && mfFields?.length) {
+        addLog('warning', `Campos faltantes para "${mfTitle}": ${mfFields.join(', ')}`);
+        sendMissingFields(mfTitle, mfFields);
+      }
+      sendResponse({ ok: true });
       break;
     }
 

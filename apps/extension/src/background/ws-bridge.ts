@@ -44,6 +44,13 @@ type ExtensionMessage =
         message: string;
         timestamp: number;
       };
+    }
+  | {
+      type: 'ext:missing-fields';
+      payload: {
+        jobTitle: string;
+        fields: string[];
+      };
     };
 
 export type BackendMessage =
@@ -239,6 +246,13 @@ export function sendLog(level: string, message: string): void {
       message,
       timestamp: Date.now()
     }
+  });
+}
+
+export function sendMissingFields(jobTitle: string, fields: string[]): void {
+  sendMessage({
+    type: 'ext:missing-fields',
+    payload: { jobTitle, fields }
   });
 }
 

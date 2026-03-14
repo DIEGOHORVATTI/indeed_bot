@@ -520,6 +520,15 @@ async function prepareAndFillJob(worker: TabWorker): Promise<void> {
     return;
   }
 
+  let baseProfile = settings?.personalization?.baseProfile || '';
+  try {
+    const res = await fetch(`${settings.backendUrl}/api/settings/profile`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.value) baseProfile = data.value;
+    }
+  } catch {}
+
   worker.cvPayload = {
     cvData: cvPdfData ? Array.from(new Uint8Array(cvPdfData)) : undefined,
     cvOnlyData: cvOnlyPdfData ? Array.from(new Uint8Array(cvOnlyPdfData)) : undefined,
@@ -527,7 +536,7 @@ async function prepareAndFillJob(worker: TabWorker): Promise<void> {
     coverData: coverPdfData ? Array.from(new Uint8Array(coverPdfData)) : undefined,
     coverFilename,
     jobTitle: job.title || '',
-    baseProfile: settings?.personalization?.baseProfile || ''
+    baseProfile,
   };
 
   worker.state = 'filling';

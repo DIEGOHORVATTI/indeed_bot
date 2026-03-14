@@ -123,6 +123,78 @@ async function askClaude(
   });
 }
 
+interface BatchFieldInput {
+  id: string;
+  question: string;
+  options?: string[];
+  constraints?: Partial<InputConstraints>;
+}
+
+interface BatchFieldResult {
+  answer: string | null;
+  missing: boolean;
+}
+
+const missingFields: string[] = [];
+
+async function askClaudeBatch(
+  fields: BatchFieldInput[]
+): Promise<Record<string, BatchFieldResult> | null> {
+  log(`AI Batch: ${fields.length} fields at once`);
+
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage(
+      {
+        type: 'ASK_CLAUDE_BATCH',
+        payload: {
+          fields: fields.map((f) => ({
+            id: f.id,
+            question: f.question,
+            options: f.options,
+            constraints: f.constraints
+              ? { type: f.constraints.type, maxLength: f.constraints.maxLength, minLength: f.constraints.minLength, min: f.constraints.min, max: f.constraints.max, pattern: f.constraints.pattern, placeholder: f.constraints.placeholder }
+              : undefined,
+          })),
+          jobTitle: currentJobTitle,
+          baseProfile: currentBaseProfile,
+        }
+      },
+      (response) => {
+        const results = response?.payload?.results || null;
+        if (results) {
+          for (const [id, result] of Object.entries(results)) {
+            const r = result as BatchFieldResult;
+            if (r.missing) {
+              const field = fields.find((f) => f.id === id);
+              if (field) missingFields.push(field.question);
+            }
+          }
+        }
+        log(`AI Batch result: ${results ? Object.keys(results).length : 0} answers, ${missingFields.length} missing`);
+        resolve(results);
+      }
+    );
+  });
+}
+
+function reportMissingFields(): void {
+  if (missingFields.length === 0) return;
+  chrome.runtime.sendMessage({
+    type: 'ADD_LOG',
+    payload: {
+      level: 'warning',
+      message: `Campos sem resposta no perfil: ${missingFields.join(', ')}`,
+    }
+  });
+  chrome.runtime.sendMessage({
+    type: 'MISSING_FIELDS',
+    payload: {
+      jobTitle: currentJobTitle,
+      fields: [...missingFields],
+    }
+  });
+}
+
 // ── Resume Upload ──
 
 async function waitForFileInput(timeoutMs = 3000): Promise<HTMLInputElement | null> {
