@@ -1,5 +1,6 @@
 import { Elysia, t } from 'elysia'
 import { getDb, getJobs, getJobById, updateJob, deleteJobs, getStats } from '@jobpilot/db'
+import { getMissingFieldsAlerts, clearMissingFieldsAlerts } from './ws.js'
 
 export const jobsRoute = new Elysia()
   .get('/api/jobs', ({ query }) => {
@@ -61,4 +62,13 @@ export const jobsRoute = new Elysia()
     body: t.Object({
       ids: t.Array(t.Number()),
     }),
+  })
+
+  .get('/api/jobs/missing-fields', () => {
+    return getMissingFieldsAlerts()
+  })
+
+  .delete('/api/jobs/missing-fields', () => {
+    clearMissingFieldsAlerts()
+    return { ok: true }
   })

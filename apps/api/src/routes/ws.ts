@@ -62,6 +62,13 @@ type ExtensionMessage =
         timestamp: number
       }
     }
+  | {
+      type: 'ext:missing-fields'
+      payload: {
+        jobTitle: string
+        fields: string[]
+      }
+    }
 
 type BackendMessage =
   | {
@@ -112,6 +119,7 @@ const jobKeyToUrl = new Map<string, string>()
 let extensionSocket: { send(data: string): void; close(code?: number, reason?: string): void } | null =
   null
 let extensionConnected = false
+let missingFieldsAlerts: Array<{ jobTitle: string; fields: string[]; timestamp: number }> | null = null
 
 type ScreenshotListener = (data: string) => void
 const screenshotListeners = new Set<ScreenshotListener>()
@@ -215,6 +223,14 @@ async function handleExtensionMessage(message: ExtensionMessage): Promise<void> 
       return
     }
 
+    case 'ext:missing-fields': {
+      const { jobTitle, fields } = message.payload
+      if (!missingFieldsAlerts) missingFieldsAlerts = []
+      missingFieldsAlerts.push({ jobTitle, fields, timestamp: Date.now() })
+      if (missingFieldsAlerts.length > 20) missingFieldsAlerts.shift()
+      return
+    }
+
     case 'ext:status':
     case 'ext:log': {
       return
@@ -224,6 +240,14 @@ async function handleExtensionMessage(message: ExtensionMessage): Promise<void> 
 
 export function sendToExtension(message: BackendMessage): void {
   forwardToExtension(message)
+}
+
+export function getMissingFieldsAlerts() {
+  return missingFieldsAlerts || []
+}
+
+export function clearMissingFieldsAlerts() {
+  missingFieldsAlerts = null
 }
 
 export function handleSandboxControl(action: string): void {
