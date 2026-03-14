@@ -1,7 +1,7 @@
 import { Elysia, t } from 'elysia'
 import { getProvider } from '@jobpilot/ai'
 import { MODEL_FAST } from '@jobpilot/config'
-import { getSetting } from '@jobpilot/db'
+import { getDb, getSetting } from '@jobpilot/db'
 import type { AnswerRequest } from '@jobpilot/types'
 
 const SYSTEM_RULES = [
@@ -41,22 +41,11 @@ const SYSTEM_RULES = [
   '- "I am a highly motivated..." (robo)',
 ].join('\n')
 
-function buildProfileContext(): string {
-  try {
-    const { getDb } = require('@jobpilot/db')
-    const db = getDb()
-    const row = db.select().from(require('@jobpilot/db').settings).where(require('drizzle-orm').eq(require('@jobpilot/db').settings.key, 'profile')).get()
-    return row?.value || ''
-  } catch {
-    return ''
-  }
-}
-
 function resolveProfile(reqProfile?: string): string {
-  if (reqProfile && reqProfile.length > 50 && !reqProfile.includes('- Nome completo:\n')) return reqProfile
-  const dbProfile = buildProfileContext()
+  const dbProfile = getSetting(getDb(), 'profile')
   if (dbProfile && dbProfile.length > 50) return dbProfile
-  return reqProfile || ''
+  if (reqProfile && reqProfile.length > 50) return reqProfile
+  return dbProfile || reqProfile || ''
 }
 
 function matchOption(answer: string, options: string[]): string {
