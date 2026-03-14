@@ -11,6 +11,8 @@ import { sandboxRoute } from './routes/sandbox.js'
 import { settingsRoute } from './routes/settings.js'
 import { wsRoute } from './routes/ws.js'
 import { cvsRoute } from './routes/cvs.js'
+import { extensionRoute } from './routes/extension.js'
+import { scrapeRoute } from './routes/scrape.js'
 
 export const app = new Elysia()
   .use(cors())
@@ -33,3 +35,5 @@ export const app = new Elysia()
   .use(wsRoute)
   .use(settingsRoute)
   .use(cvsRoute)
+  .use(extensionRoute)
+  .use(scrapeRoute)

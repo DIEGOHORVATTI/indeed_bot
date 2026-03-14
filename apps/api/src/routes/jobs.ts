@@ -4,12 +4,27 @@ import { getDb, getJobs, getJobById, updateJob, deleteJobs, getStats } from '@jo
 export const jobsRoute = new Elysia()
   .get('/api/jobs', ({ query }) => {
     const db = getDb()
-    const status = query.status || undefined
-    const limit = parseInt(query.limit || '100', 10)
-    return getJobs(db, { status, limit })
+    return getJobs(db, {
+      status: query.status || undefined,
+      source: query.source || undefined,
+      applyType: query.applyType || undefined,
+      scoreMin: query.scoreMin ? parseInt(query.scoreMin, 10) : undefined,
+      scoreMax: query.scoreMax ? parseInt(query.scoreMax, 10) : undefined,
+      dateFrom: query.dateFrom || undefined,
+      dateTo: query.dateTo || undefined,
+      search: query.search || undefined,
+      limit: parseInt(query.limit || '200', 10),
+    })
   }, {
     query: t.Object({
       status: t.Optional(t.String()),
+      source: t.Optional(t.String()),
+      applyType: t.Optional(t.String()),
+      scoreMin: t.Optional(t.String()),
+      scoreMax: t.Optional(t.String()),
+      dateFrom: t.Optional(t.String()),
+      dateTo: t.Optional(t.String()),
+      search: t.Optional(t.String()),
       limit: t.Optional(t.String()),
     }),
   })

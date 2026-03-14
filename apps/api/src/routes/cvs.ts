@@ -6,7 +6,13 @@ import { readFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 
 const REPO_ROOT = resolve(dirname(new URL(import.meta.url).pathname), '..', '..', '..', '..')
-const CV_TEMPLATE = readFileSync(resolve(REPO_ROOT, 'templates', 'cv_template.html'), 'utf-8')
+const TEMPLATES_DIR = resolve(REPO_ROOT, 'templates')
+
+const CV_TEMPLATES: Record<string, string> = {
+  classic: readFileSync(resolve(TEMPLATES_DIR, 'cv-classic.html'), 'utf-8'),
+  modern: readFileSync(resolve(TEMPLATES_DIR, 'cv-modern.html'), 'utf-8'),
+  minimal: readFileSync(resolve(TEMPLATES_DIR, 'cv-minimal.html'), 'utf-8'),
+}
 
 const PALETTES: Record<string, { primary: string; accent: string }> = {
   profissional: { primary: '#1B2A4A', accent: '#2E5FA3' },
@@ -159,7 +165,9 @@ export const cvsRoute = new Elysia()
         return { error: 'IA retornou formato invalido. Tente novamente.' }
       }
 
-      let html = fillTemplate(CV_TEMPLATE, fields)
+      const templateId = body.templateId || 'classic'
+      const template = CV_TEMPLATES[templateId] || CV_TEMPLATES.classic
+      let html = fillTemplate(template, fields)
       if (body.paletteId) {
         html = applyPalette(html, body.paletteId)
       }
@@ -171,7 +179,7 @@ export const cvsRoute = new Elysia()
         jobId: body.jobId || null,
         jobTitle: body.jobTitle || null,
         jobCompany: body.jobCompany || null,
-        templateId: body.templateId || 'classic',
+        templateId,
         paletteId: body.paletteId || null,
       })
 
