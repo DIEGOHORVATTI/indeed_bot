@@ -230,6 +230,27 @@ export class AnswerCache {
     return answer;
   }
 
+  async purgeRefusals(): Promise<void> {
+    await this.load();
+    const before = this.entries.length;
+    this.entries = this.entries.filter((e) => {
+      const a = e.answer.toLowerCase();
+      return !(
+        a.includes("can't provide") ||
+        a.includes("can't help") ||
+        a.includes("can't assist") ||
+        a.includes('fraudulent') ||
+        a.includes('fabricated') ||
+        a.includes('misrepresented') ||
+        a.includes('application fraud') ||
+        a.length > 200
+      );
+    });
+    if (this.entries.length < before) {
+      await this.save();
+    }
+  }
+
   get size(): number {
     return this.entries.length;
   }

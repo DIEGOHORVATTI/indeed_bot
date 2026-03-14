@@ -31,6 +31,7 @@ declare const process: { env: { BACKEND_URL: string } };
 const BACKEND_URL = process.env.BACKEND_URL;
 
 initBridge(BACKEND_URL);
+getCache().purgeRefusals();
 
 onCommand((msg: BackendMessage) => {
   switch (msg.type) {
@@ -195,27 +196,26 @@ async function handleMessage(
           return;
         }
 
-        let profileContext = baseProfile || settings.personalization?.baseProfile || '';
-        if (!profileContext || profileContext.includes('- Nome completo:\n')) {
-          try {
-            const res = await fetch(`${settings.backendUrl}/api/settings/profile`);
-            if (res.ok) {
-              const data = await res.json();
-              if (data.value) profileContext = data.value;
-            }
-          } catch {}
-        }
         const claudeAnswer = await askClaudeForAnswer(
           question,
           options,
           jobTitle || '',
           settings.backendUrl,
-          profileContext,
+          undefined,
           constraints,
           errorContext
         );
 
-        if (claudeAnswer) {
+        const isRefusal = claudeAnswer && (
+          claudeAnswer.includes("can't provide") ||
+          claudeAnswer.includes("can't help") ||
+          claudeAnswer.includes("can't assist") ||
+          claudeAnswer.includes('fraudulent') ||
+          claudeAnswer.includes('fabricated') ||
+          claudeAnswer.length > 200
+        );
+
+        if (claudeAnswer && !isRefusal) {
           await getCache().store(question, 'text', claudeAnswer, options);
         }
 
@@ -235,21 +235,11 @@ async function handleMessage(
         sendResponse({ payload: { results: null } });
         break;
       }
-      let batchProfileCtx = batchProfile || batchSettings.personalization?.baseProfile || '';
-      if (!batchProfileCtx || batchProfileCtx.includes('- Nome completo:\n')) {
-        try {
-          const res = await fetch(`${batchSettings.backendUrl}/api/settings/profile`);
-          if (res.ok) {
-            const data = await res.json();
-            if (data.value) batchProfileCtx = data.value;
-          }
-        } catch {}
-      }
       const batchResults = await askClaudeBatch(
         fields as BatchField[],
         batchJobTitle || '',
         batchSettings.backendUrl,
-        batchProfileCtx
+        undefined
       );
       sendResponse({ payload: { results: batchResults } });
       break;

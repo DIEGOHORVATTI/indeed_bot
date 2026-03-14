@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "JobPilot",
-  "version": "0.3.18",
+  "version": "0.4.0",
   "description": "Auto-apply to jobs across all platforms with AI-tailored CV and smart form filling",
   "permissions": [
     "tabs",
