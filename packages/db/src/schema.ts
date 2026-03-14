@@ -20,6 +20,8 @@ export const jobs = sqliteTable(
     cvPdfPath: text('cv_pdf_path'),
     coverPdfPath: text('cover_pdf_path'),
     status: text('status').notNull().default('discovered'),
+    applyType: text('apply_type'),
+    jobKey: text('job_key'),
     failReason: text('fail_reason'),
     createdAt: text('created_at')
       .notNull()
@@ -32,6 +34,8 @@ export const jobs = sqliteTable(
     index('idx_jobs_status').on(table.status),
     index('idx_jobs_score').on(table.score),
     index('idx_jobs_url').on(table.url),
+    index('idx_jobs_source').on(table.source),
+    index('idx_jobs_job_key').on(table.jobKey),
   ]
 )
 

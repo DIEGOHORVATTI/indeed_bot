@@ -1,9 +1,25 @@
-import { eq, desc, sql, and, gte, count, inArray } from 'drizzle-orm'
+import { eq, desc, sql, and, gte, lte, count, inArray, like } from 'drizzle-orm'
 import { getDb } from './connection.js'
 import { jobs, logs, settings, cvs } from './schema.js'
 import type { Job, StatsEntry, SearchesConfig, Platform } from '@jobpilot/types'
 
 type DB = ReturnType<typeof getDb>
+
+function normalizeJobUrl(raw: string): string {
+  try {
+    const parsed = new URL(raw)
+    if (parsed.hostname.includes('indeed.com')) {
+      const jk = parsed.searchParams.get('jk') || parsed.searchParams.get('vjk')
+      if (jk) {
+        return `https://${parsed.hostname}/viewjob?jk=${jk}`
+      }
+    }
+    parsed.hash = ''
+    return parsed.toString()
+  } catch {
+    return raw
+  }
+}
 
 export function insertJob(
   db: DB,
@@ -17,13 +33,16 @@ export function insertJob(
     datePosted?: string | null
     searchQuery?: string | null
     description?: string | null
+    applyType?: string | null
+    jobKey?: string | null
   }
 ): number | null {
   const status = data.description ? 'enriched' : 'discovered'
+  const url = normalizeJobUrl(data.url)
   try {
     const result = db
       .insert(jobs)
-      .values({ ...data, status })
+      .values({ ...data, url, status })
       .onConflictDoNothing({ target: jobs.url })
       .returning({ id: jobs.id })
       .get()
@@ -35,21 +54,36 @@ export function insertJob(
 
 export function getJobs(
   db: DB,
-  opts?: { status?: string; limit?: number }
+  opts?: {
+    status?: string
+    source?: string
+    applyType?: string
+    scoreMin?: number
+    scoreMax?: number
+    dateFrom?: string
+    dateTo?: string
+    search?: string
+    limit?: number
+  }
 ): Job[] {
   const limit = opts?.limit ?? 100
-  if (opts?.status) {
-    return db
-      .select()
-      .from(jobs)
-      .where(eq(jobs.status, opts.status))
-      .orderBy(desc(jobs.score))
-      .limit(limit)
-      .all() as Job[]
-  }
-  return db
-    .select()
-    .from(jobs)
+  const conditions = []
+
+  if (opts?.status) conditions.push(eq(jobs.status, opts.status))
+  if (opts?.source) conditions.push(eq(jobs.source, opts.source))
+  if (opts?.applyType) conditions.push(eq(jobs.applyType, opts.applyType))
+  if (opts?.scoreMin != null) conditions.push(gte(jobs.score, opts.scoreMin))
+  if (opts?.scoreMax != null) conditions.push(lte(jobs.score, opts.scoreMax))
+  if (opts?.dateFrom) conditions.push(gte(jobs.createdAt, opts.dateFrom))
+  if (opts?.dateTo) conditions.push(lte(jobs.createdAt, opts.dateTo))
+  if (opts?.search) conditions.push(like(jobs.title, `%${opts.search}%`))
+
+  const query = db.select().from(jobs)
+  const filtered = conditions.length > 0
+    ? query.where(and(...conditions))
+    : query
+
+  return filtered
     .orderBy(desc(jobs.score))
     .limit(limit)
     .all() as Job[]
@@ -67,7 +101,7 @@ export function getJobByUrl(db: DB, url: string): Job | undefined {
   return db
     .select()
     .from(jobs)
-    .where(eq(jobs.url, url))
+    .where(eq(jobs.url, normalizeJobUrl(url)))
     .get() as Job | undefined
 }
 

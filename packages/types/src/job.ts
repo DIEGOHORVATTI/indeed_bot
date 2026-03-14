@@ -4,9 +4,12 @@ export type JobStatus =
   | 'scored'
   | 'tailored'
   | 'ready'
+  | 'applying'
   | 'applied'
   | 'failed'
   | 'skipped'
+
+export type ApplyType = 'easy_apply' | 'external'
 
 export interface Job {
   id: number
@@ -25,6 +28,8 @@ export interface Job {
   cvPdfPath: string | null
   coverPdfPath: string | null
   status: JobStatus
+  applyType: ApplyType | null
+  jobKey: string | null
   failReason: string | null
   createdAt: string
   updatedAt: string
