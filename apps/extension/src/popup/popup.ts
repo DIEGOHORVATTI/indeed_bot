@@ -1,21 +1,12 @@
-/**
- * Popup UI — controls and status display.
- */
-
 import { BotStatus } from '../types';
-import { initI18n, translatePage, t } from '../utils/translate';
 
 const $ = (id: string) => document.getElementById(id)!;
 
-const btnStart = $('btn-start') as HTMLButtonElement;
 const btnPause = $('btn-pause') as HTMLButtonElement;
 const btnResume = $('btn-resume') as HTMLButtonElement;
 const btnStop = $('btn-stop') as HTMLButtonElement;
-const btnOptions = $('btn-options') as HTMLAnchorElement;
 const statusBadge = $('status-badge');
 const appliedCount = $('applied-count');
-const skippedCount = $('skipped-count');
-const failedCountEl = $('failed-count');
 const pendingCountEl = $('pending-count');
 const totalCount = $('total-count');
 const progressSection = $('progress-section');
@@ -24,16 +15,6 @@ const progressFill = $('progress-fill');
 const currentJob = $('current-job');
 const currentJobText = $('current-job-text');
 const logContainer = $('log');
-
-// ── Button Handlers ──
-
-btnStart.addEventListener('click', () => {
-  chrome.runtime.sendMessage({ type: 'START_BOT' }, (response) => {
-    if (response?.error) {
-      alert(response.error);
-    }
-  });
-});
 
 btnPause.addEventListener('click', () => {
   chrome.runtime.sendMessage({ type: 'PAUSE_BOT' });
@@ -47,76 +28,32 @@ btnStop.addEventListener('click', () => {
   chrome.runtime.sendMessage({ type: 'STOP_BOT' });
 });
 
-btnOptions.addEventListener('click', (e) => {
-  e.preventDefault();
-  chrome.runtime.openOptionsPage();
-});
-
-// ── Status state → i18n key ──
-const stateI18nKey: Record<string, string> = {
-  idle: 'status_idle',
-  collecting: 'status_collecting',
-  applying: 'status_applying',
-  paused: 'status_paused',
-  waiting_user: 'status_waiting_user'
+const STATE_LABELS: Record<string, string> = {
+  idle: 'Aguardando',
+  applying: 'Aplicando',
+  paused: 'Pausado',
+  waiting_user: 'Aguardando revisao',
 };
 
 function updateUI(status: BotStatus): void {
-  // Badge
-  statusBadge.textContent = t(stateI18nKey[status.state] || status.state);
+  statusBadge.textContent = STATE_LABELS[status.state] || status.state;
   statusBadge.className = `badge ${status.state}`;
 
-  // Stats — skipped includes external apply jobs from collection
-  const totalSkipped =
-    status.skippedCount +
-    (status.collectionStats?.externalApply || 0) +
-    (status.collectionStats?.alreadyKnown || 0);
   appliedCount.textContent = String(status.appliedCount);
-  skippedCount.textContent = String(totalSkipped);
-  failedCountEl.textContent = String(status.failedCount);
   pendingCountEl.textContent = String(status.pendingJobs);
-  totalCount.textContent = String(
-    status.totalJobs +
-      (status.collectionStats?.externalApply || 0) +
-      (status.collectionStats?.alreadyKnown || 0)
-  );
+  totalCount.textContent = String(status.totalJobs);
 
-  // Progress bar & link info
   const isActive = status.state !== 'idle';
-  if (isActive && (status.totalJobs > 0 || status.state === 'collecting')) {
+  if (isActive && status.totalJobs > 0) {
     progressSection.style.display = 'block';
-
-    if (status.state === 'collecting') {
-      // Collection phase: show page progress and jobs found
-      const pageInfo = status.totalPages
-        ? `Page ${status.currentPage || 1}/${status.totalPages}`
-        : `Page ${status.currentPage || 1}`;
-      const cs = status.collectionStats;
-      const parts = [`${status.totalJobs} apply`];
-      if (cs?.externalApply) parts.push(`${cs.externalApply} external`);
-      if (cs?.alreadyKnown) parts.push(`${cs.alreadyKnown} known`);
-      linkInfo.innerHTML = `<strong>${t('coletando')}</strong> ${pageInfo} — ${parts.join(', ')}`;
-
-      // Progress based on pages scraped vs total
-      const pct = status.totalPages
-        ? Math.round(((status.currentPage || 1) / status.totalPages) * 100)
-        : 0;
-      progressFill.style.width = `${pct}%`;
-    } else {
-      // Applying phase: show application progress + active workers
-      const processed = status.appliedCount + status.skippedCount + status.failedCount;
-      const pct = status.totalJobs > 0 ? Math.round((processed / status.totalJobs) * 100) : 0;
-      progressFill.style.width = `${pct}%`;
-
-      const workers = status.activeWorkers || 0;
-      const workerInfo = `<strong>${t('ativo')} ${workers}/1 ${t('aba')}</strong> — ${status.pendingJobs} ${t('pendente')}`;
-      linkInfo.innerHTML = workerInfo;
-    }
+    const processed = status.appliedCount + status.skippedCount + status.failedCount;
+    const pct = status.totalJobs > 0 ? Math.round((processed / status.totalJobs) * 100) : 0;
+    progressFill.style.width = `${pct}%`;
+    linkInfo.textContent = `${processed}/${status.totalJobs} processadas (${pct}%)`;
   } else {
     progressSection.style.display = 'none';
   }
 
-  // Current job
   if (status.currentJob && isActive) {
     currentJob.style.display = 'block';
     currentJobText.textContent = status.currentJob;
@@ -124,17 +61,14 @@ function updateUI(status: BotStatus): void {
     currentJob.style.display = 'none';
   }
 
-  // Buttons
   const isIdle = status.state === 'idle';
   const isPaused = status.state === 'paused';
-  const isRunning = ['collecting', 'applying', 'waiting_user'].includes(status.state);
+  const isRunning = ['applying', 'waiting_user'].includes(status.state);
 
-  btnStart.style.display = isIdle ? 'block' : 'none';
   btnPause.style.display = isRunning ? 'block' : 'none';
   btnResume.style.display = isPaused ? 'block' : 'none';
   btnStop.style.display = !isIdle ? 'block' : 'none';
 
-  // Log
   logContainer.innerHTML = '';
   for (const entry of status.log.slice(-30)) {
     const div = document.createElement('div');
@@ -154,20 +88,12 @@ function updateUI(status: BotStatus): void {
   logContainer.scrollTop = logContainer.scrollHeight;
 }
 
-// ── Init ──
-
-initI18n().then(() => {
-  translatePage();
-
-  // Get current state
-  chrome.runtime.sendMessage({ type: 'GET_STATE' }, (response) => {
-    if (response?.payload) {
-      updateUI(response.payload);
-    }
-  });
+chrome.runtime.sendMessage({ type: 'GET_STATE' }, (response) => {
+  if (response?.payload) {
+    updateUI(response.payload);
+  }
 });
 
-// Listen for status updates
 chrome.runtime.onMessage.addListener((message) => {
   if (message.type === 'STATUS_UPDATE' && message.payload?.state) {
     updateUI(message.payload);

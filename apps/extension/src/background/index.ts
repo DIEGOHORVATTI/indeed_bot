@@ -9,6 +9,7 @@ import {
   stopBot,
   pauseBot,
   resumeBot,
+  applySelectedJobs,
   getStatus,
   addLog,
   getCache,
@@ -24,11 +25,10 @@ import type { BackendMessage } from './ws-bridge';
 // Initialize notification listeners (guarded for availability)
 setupNotificationListeners();
 
-(async () => {
-  const data = await chrome.storage.local.get('settings');
-  const backendUrl = data.settings?.backendUrl || 'http://localhost:8004';
-  initBridge(backendUrl);
-})();
+declare const process: { env: { BACKEND_URL: string } };
+const BACKEND_URL = process.env.BACKEND_URL;
+
+initBridge(BACKEND_URL);
 
 onCommand((msg: BackendMessage) => {
   switch (msg.type) {
@@ -54,18 +54,16 @@ onCommand((msg: BackendMessage) => {
       resumeBot();
       break;
     case 'cmd:apply':
-      sendLog('info', `Recebido comando de aplicação: ${msg.payload?.title}`);
+      sendLog('info', `Recebido comando de aplicacao: ${msg.payload?.title}`);
       break;
+    case 'cmd:apply-jobs': {
+      getSettings().then((settings) => {
+        applySelectedJobs(settings, msg.payload.jobs, msg.payload.mode, msg.payload.generateCv ?? true);
+      });
+      break;
+    }
   }
 });
-
-chrome.storage.onChanged.addListener((changes) => {
-  if (changes.settings?.newValue?.backendUrl) {
-    initBridge(changes.settings.newValue.backendUrl);
-  }
-});
-
-// ── Settings Management ──
 
 async function getSettings(): Promise<Settings> {
   const data = await chrome.storage.local.get('settings');
@@ -73,6 +71,7 @@ async function getSettings(): Promise<Settings> {
   return {
     ...DEFAULT_SETTINGS,
     ...s,
+    backendUrl: BACKEND_URL,
     personalization: { ...DEFAULT_SETTINGS.personalization, ...s.personalization },
     profile: { ...DEFAULT_SETTINGS.profile, ...s.profile }
   };

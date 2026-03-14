@@ -1,9 +1,3 @@
-/**
- * Bot orchestrator — state machine that drives the application flow.
- * Human-review mode: auto-fills forms, user clicks native buttons to advance.
- * Supports concurrent tabs for parallel scraping, single-tab application.
- */
-
 import { BotState, BotStatus, JobEntry, LogEntry, Message, Settings } from '../types';
 import { JobRegistry } from '../services/job-registry';
 import { AnswerCache } from '../services/answer-cache';
@@ -15,18 +9,16 @@ import {
   loadTemplates
 } from '../services/pdf';
 import {
-  createTabGroup,
-  addTabToGroup,
+  createTab,
   closeTab,
   navigateTab,
   waitForTabLoad,
-  getGroupId
+  getActiveTabId
 } from './tab-group';
 import { TIMING, LIMITS, URL_PATTERNS } from '../utils/constants';
 import {
   sendStatus,
   sendScreenshot,
-  sendJobDiscovered,
   sendJobApplied,
   sendJobFailed,
   sendLog as bridgeLog,
@@ -39,8 +31,6 @@ const cache = new AnswerCache();
 export function getCache(): AnswerCache {
   return cache;
 }
-
-// ── State ──
 
 interface CvPayload {
   cvData?: number[];
@@ -56,7 +46,7 @@ interface TabWorker {
   tabId: number;
   job: JobEntry;
   state: 'navigating' | 'filling' | 'waiting_review' | 'done';
-  cvPayload?: CvPayload; // Cached CV data for re-sending on STEP_ADVANCED
+  cvPayload?: CvPayload;
 }
 
 let state: BotState = 'idle';
@@ -71,19 +61,9 @@ let stopRequested = false;
 let currentSearchUrl = '';
 let currentSearchIndex = 0;
 let totalSearchUrls = 0;
-let currentPage = 0;
-let totalPages = 0;
-let estimatedTotalJobs = 0;
 
-// Collection stats
-let collectionExternalApply = 0;
-let collectionDuplicates = 0;
-let collectionAlreadyKnown = 0;
-
-// Worker pool
 let tabWorkers: TabWorker[] = [];
 
-// Tab URL monitor — detects submission when content script is destroyed by navigation
 let tabUrlListener: ((tabId: number, info: chrome.tabs.TabChangeInfo) => void) | null = null;
 
 function startTabUrlMonitor(): void {
@@ -111,10 +91,7 @@ function stopTabUrlMonitor(): void {
     tabUrlListener = null;
   }
 }
-let collectionTabId: number | null = null;
-let collectionExtraTabIds: number[] = [];
 
-// PDF cache — reuse previously generated CVs by safeTitle key
 const pdfCache = new Map<
   string,
   {
@@ -125,8 +102,6 @@ const pdfCache = new Map<
     coverFilename: string;
   }
 >();
-
-// ── Logging ──
 
 export function addLog(level: LogEntry['level'], message: string): void {
   const prefix = `[bot:${state}]`;
@@ -189,48 +164,19 @@ export function getStatus(): BotStatus {
     currentSearchUrl,
     currentSearchIndex,
     totalSearchUrls,
-    currentPage,
-    totalPages,
-    estimatedTotalJobs,
     activeWorkers,
-    scrapingTabs: Math.min(
-      settings?.scrapingTabs || 1,
-      settings?.maxApplies && settings.maxApplies > 0 ? settings.maxApplies : Infinity,
-      jobs.filter((j) => j.status === 'pending').length || 1
-    ),
+    scrapingTabs: 1,
     collectionStats: {
-      externalApply: collectionExternalApply,
-      duplicates: collectionDuplicates,
-      alreadyKnown: collectionAlreadyKnown
+      externalApply: 0,
+      duplicates: 0,
+      alreadyKnown: 0
     },
     log: log.slice(-50)
   };
 }
 
-// ── Helpers ──
-
 function delay(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
-}
-
-function randomDelay(minMs: number, maxMs: number): Promise<void> {
-  return delay(minMs + Math.random() * (maxMs - minMs));
-}
-
-function buildPageUrl(baseUrl: string, startOffset: number): string {
-  try {
-    const url = new URL(baseUrl);
-    if (startOffset > 0) {
-      url.searchParams.set('start', String(startOffset));
-    } else {
-      url.searchParams.delete('start');
-    }
-    return url.toString();
-  } catch {
-    // Fallback for malformed URLs
-    const separator = baseUrl.includes('?') ? '&' : '?';
-    return startOffset > 0 ? `${baseUrl}${separator}start=${startOffset}` : baseUrl;
-  }
 }
 
 async function sendToTab(tabId: number, message: Message, retries = 3): Promise<any> {
@@ -247,46 +193,82 @@ async function sendToTab(tabId: number, message: Message, retries = 3): Promise<
   return undefined;
 }
 
-// ── Main Bot Loop ──
-
 export async function startBot(userSettings: Settings): Promise<void> {
+  const selectedJobs = (userSettings.searchUrls || []).map((url, idx) => ({
+    id: idx + 1,
+    url,
+    title: '',
+    company: ''
+  }));
+  await applySelectedJobs(userSettings, selectedJobs, 'semi-auto');
+}
+
+let generateCvForBatch = true;
+
+export async function applySelectedJobs(
+  userSettings: Settings,
+  selectedJobs: Array<{ id: number; url: string; title: string; company: string }>,
+  mode: 'semi-auto' | 'full-auto',
+  generateCv = true
+): Promise<void> {
   if (state !== 'idle') return;
 
   settings = userSettings;
-  state = 'collecting';
+  state = 'applying';
   appliedCount = 0;
   skippedCount = 0;
   failedCount = 0;
-  jobs = [];
+  jobs = selectedJobs.map((j) => {
+    let jobKey = '';
+    try {
+      const params = new URL(j.url).searchParams;
+      jobKey = params.get('jk') || params.get('vjk') || '';
+    } catch {}
+    return {
+      url: j.url,
+      jobKey,
+      title: j.title,
+      company: j.company,
+      status: 'pending' as const
+    };
+  });
   currentJobIndex = 0;
   log = [];
   stopRequested = false;
+  tabWorkers = [];
   currentSearchUrl = '';
   currentSearchIndex = 0;
-  totalSearchUrls = settings.searchUrls.length;
-  tabWorkers = [];
-  collectionTabId = null;
-  collectionExtraTabIds = [];
-  collectionExternalApply = 0;
-  collectionDuplicates = 0;
-  collectionAlreadyKnown = 0;
+  totalSearchUrls = 0;
+  generateCvForBatch = generateCv;
 
   await registry.load();
   await cache.load();
-  await loadTemplates();
+  if (generateCvForBatch) await loadTemplates();
   startTabUrlMonitor();
 
-  addLog('info', 'Bot started');
+  addLog('info', `Aplicando em ${jobs.length} vaga(s) — modo: ${mode}`);
   broadcastStatus();
 
   try {
-    await collectAndApply();
+    await launchNextWorker(null);
+
+    while (!stopRequested) {
+      const activeWorkers = tabWorkers.filter((w) => w.state !== 'done').length;
+      const hasPending = jobs.some((j) => j.status === 'pending');
+
+      if (activeWorkers === 0 && !hasPending) break;
+      if (activeWorkers === 0 && hasPending) {
+        await launchNextWorker();
+      }
+
+      await delay(1000);
+    }
   } catch (err) {
-    addLog('error', `Bot error: ${err}`);
+    addLog('error', `Erro na aplicacao: ${err}`);
   } finally {
     state = 'idle';
     stopTabUrlMonitor();
-    addLog('info', `Bot finished. Applied: ${appliedCount}, Skipped: ${skippedCount}`);
+    addLog('info', `Aplicacao finalizada. Applied: ${appliedCount}, Skipped: ${skippedCount}`);
     broadcastStatus();
   }
 }
@@ -295,11 +277,9 @@ export function stopBot(): void {
   stopRequested = true;
   state = 'idle';
   stopTabUrlMonitor();
-  // Reset in_progress jobs back to pending so they're not stuck
   for (const job of jobs) {
     if (job.status === 'in_progress') job.status = 'pending';
   }
-  // Close all worker tabs
   for (const worker of tabWorkers) {
     closeTab(worker.tabId).catch(() => {});
   }
@@ -309,7 +289,7 @@ export function stopBot(): void {
 }
 
 export function pauseBot(): void {
-  if (state === 'applying' || state === 'collecting') {
+  if (state === 'applying') {
     state = 'paused';
     addLog('info', 'Bot paused');
     broadcastStatus();
@@ -324,382 +304,12 @@ export function resumeBot(): void {
   }
 }
 
-// ── Collection Phase ──
-
-/** Collect links from a single page using a specific tab */
-async function collectSinglePage(
-  tabId: number,
-  pageUrl: string,
-  pageNum: number
-): Promise<{
-  links: { url: string; jobKey: string; title?: string; company?: string; location?: string; salary?: string }[];
-  stats?: { totalCards: number; externalApply: number };
-  jobCount?: number;
-  error?: string;
-}> {
-  try {
-    await navigateTab(tabId, pageUrl);
-    await waitForTabLoad(tabId, TIMING.tabLoadTimeout);
-    await delay(TIMING.pageLoadDelay);
-  } catch (err) {
-    return { links: [], error: `navigation_failed: ${err}` };
-  }
-
-  // Verify tab is still on Indeed
-  try {
-    const tab = await chrome.tabs.get(tabId);
-    if (!tab.url || !tab.url.includes(URL_PATTERNS.indeedDomain)) {
-      return { links: [], error: `redirected: ${tab.url}` };
-    }
-  } catch {
-    return { links: [], error: 'tab_closed' };
-  }
-
-  // Get total count if available
-  let jobCount: number | undefined;
-  const countResp = await sendToTab(tabId, { type: 'GET_TOTAL_COUNT' });
-  if (countResp?.payload?.totalJobs > 0) {
-    jobCount = countResp.payload.totalJobs;
-  }
-
-  // Collect links
-  const response = await sendToTab(tabId, { type: 'COLLECT_LINKS' });
-  const links: { url: string; jobKey: string; title?: string; company?: string; location?: string; salary?: string }[] = response?.payload || [];
-  const stats = response?.stats;
-
-  console.log(`[collect] Tab ${tabId} page ${pageNum}: got ${links.length} links`);
-  return { links, stats, jobCount };
-}
-
-async function collectAllJobs(): Promise<void> {
-  if (!settings) return;
-
-  totalSearchUrls = settings.searchUrls.length;
-  const configuredTabs = settings.scrapingTabs || 1;
-  // Limit tabs to maxApplies if set (no point opening 5 tabs for 1 apply)
-  const scrapingTabs =
-    settings.maxApplies > 0 ? Math.min(configuredTabs, settings.maxApplies) : configuredTabs;
-
-  for (let searchIdx = 0; searchIdx < settings.searchUrls.length; searchIdx++) {
-    if (stopRequested) break;
-
-    const searchUrl = settings.searchUrls[searchIdx];
-    currentSearchUrl = searchUrl;
-    currentSearchIndex = searchIdx;
-
-    addLog(
-      'info',
-      `[Link ${searchIdx + 1}/${totalSearchUrls}] Collecting from: ${searchUrl} (${scrapingTabs} tab(s))`
-    );
-
-    currentPage = 0;
-    totalPages = 0;
-    estimatedTotalJobs = 0;
-    const batchStartIndex = jobs.length;
-    const JOBS_PER_PAGE = LIMITS.jobsPerPage;
-    const seenJobKeys = new Set<string>();
-
-    // Create scraping tabs — first creates the group, extras join it
-    const scrapingTabIds: number[] = [];
-    for (let i = 0; i < scrapingTabs; i++) {
-      if (i === 0 && collectionTabId) {
-        scrapingTabIds.push(collectionTabId);
-      } else if (getGroupId() !== null) {
-        const tabId = await addTabToGroup(searchUrl);
-        scrapingTabIds.push(tabId);
-      } else {
-        const { tabId } = await createTabGroup(searchUrl);
-        scrapingTabIds.push(tabId);
-      }
-    }
-
-    // Phase 1: Scrape first page to get total count
-    const firstPageUrl = buildPageUrl(searchUrl, 0);
-    const firstResult = await collectSinglePage(scrapingTabIds[0], firstPageUrl, 1);
-
-    if (firstResult.error) {
-      addLog('warning', `Page 1 failed: ${firstResult.error}`);
-    }
-
-    if (firstResult.jobCount) {
-      estimatedTotalJobs = firstResult.jobCount;
-      totalPages = Math.ceil(estimatedTotalJobs / JOBS_PER_PAGE);
-      addLog('info', `Found ~${estimatedTotalJobs} jobs across ~${totalPages} page(s)`);
-    }
-
-    // Process first page results
-    let consecutiveEmptyPages = 0;
-    if (firstResult.links.length > 0 || (firstResult.stats && firstResult.stats.totalCards > 0)) {
-      // Track external apply from stats
-      if (firstResult.stats) {
-        collectionExternalApply += firstResult.stats.externalApply;
-      }
-      let pageNew = 0;
-      let pageDupes = 0;
-      let pageKnown = 0;
-      const discoveredJobs: { url: string; jobKey: string; title?: string; company?: string; location?: string; salary?: string; source: string }[] = [];
-      for (const link of firstResult.links) {
-        // Stop adding jobs once we have enough for maxApplies
-        if (
-          settings.maxApplies > 0 &&
-          jobs.filter((j) => j.status === 'pending').length >= settings.maxApplies
-        ) {
-          break;
-        }
-        if (seenJobKeys.has(link.jobKey)) {
-          pageDupes++;
-          collectionDuplicates++;
-          continue;
-        }
-        seenJobKeys.add(link.jobKey);
-        if (await registry.isKnown(link.jobKey)) {
-          pageKnown++;
-          collectionAlreadyKnown++;
-          continue;
-        }
-        jobs.push({ url: link.url, jobKey: link.jobKey, title: link.title, status: 'pending' });
-        discoveredJobs.push({ url: link.url, jobKey: link.jobKey, title: link.title, company: link.company, location: link.location, salary: link.salary, source: 'indeed' });
-        pageNew++;
-      }
-      const parts = [`+${pageNew} new`];
-      if (pageDupes > 0) parts.push(`${pageDupes} dupes`);
-      if (pageKnown > 0) parts.push(`${pageKnown} known`);
-      if (firstResult.stats?.externalApply) {
-        parts.push(`${firstResult.stats.externalApply} external`);
-      }
-      addLog('info', `Page 1: ${parts.join(', ')}`);
-
-      if (isConnected() && discoveredJobs.length > 0) {
-        sendJobDiscovered(discoveredJobs);
-      }
-    } else {
-      consecutiveEmptyPages++;
-      const statsInfo = firstResult.stats
-        ? ` (${firstResult.stats.totalCards} cards, ${firstResult.stats.externalApply} external)`
-        : '';
-      if (firstResult.stats) collectionExternalApply += firstResult.stats.externalApply;
-      addLog('info', `Page 1 empty${statsInfo}`);
-    }
-
-    currentPage = 1;
-    broadcastStatus();
-
-    // Early exit: if maxApplies is set and we already have enough pending jobs, skip remaining pages
-    const pendingCount = jobs.filter((j) => j.status === 'pending').length;
-    if (settings.maxApplies > 0 && pendingCount >= settings.maxApplies) {
-      addLog(
-        'info',
-        `Already have ${pendingCount} pending job(s) (maxApplies=${settings.maxApplies}) — skipping remaining pages`
-      );
-      collectionTabId = scrapingTabIds[0];
-      collectionExtraTabIds = scrapingTabIds.slice(1);
-      continue; // next search URL (or end)
-    }
-
-    // Phase 2: Parallel scraping of remaining pages
-    let nextPage = 2;
-    let globalEmptyStreak = consecutiveEmptyPages;
-
-    while (!stopRequested && globalEmptyStreak < LIMITS.emptyPageStreak) {
-      // Check if we've reached the last known page
-      if (estimatedTotalJobs > 0 && totalPages > 0 && nextPage > totalPages) {
-        addLog('info', `Reached last page (${totalPages}) — collection done`);
-        break;
-      }
-
-      // Assign pages to tabs in parallel
-      const pageAssignments: { tabId: number; pageNum: number; pageUrl: string }[] = [];
-      for (
-        let i = 0;
-        i < scrapingTabIds.length && globalEmptyStreak < LIMITS.emptyPageStreak;
-        i++
-      ) {
-        const pn = nextPage + i;
-        // Don't exceed known total pages
-        if (estimatedTotalJobs > 0 && totalPages > 0 && pn > totalPages) break;
-        const startOffset = (pn - 1) * JOBS_PER_PAGE;
-        pageAssignments.push({
-          tabId: scrapingTabIds[i],
-          pageNum: pn,
-          pageUrl: buildPageUrl(searchUrl, startOffset)
-        });
-      }
-
-      if (pageAssignments.length === 0) break;
-
-      // Scrape all assigned pages in parallel
-      const results = await Promise.all(
-        pageAssignments.map((a) => collectSinglePage(a.tabId, a.pageUrl, a.pageNum))
-      );
-
-      // Process results in page order
-      for (let i = 0; i < results.length; i++) {
-        const result = results[i];
-        const pn = pageAssignments[i].pageNum;
-        currentPage = pn;
-
-        // Pick up total count from any page if we don't have it yet
-        if (estimatedTotalJobs === 0 && result.jobCount) {
-          estimatedTotalJobs = result.jobCount;
-          totalPages = Math.ceil(estimatedTotalJobs / JOBS_PER_PAGE);
-          addLog('info', `Found ~${estimatedTotalJobs} jobs across ~${totalPages} page(s)`);
-        }
-
-        if (result.error) {
-          addLog('warning', `Page ${pn} error: ${result.error}`);
-          globalEmptyStreak++;
-          continue;
-        }
-
-        // Track external apply from stats
-        if (result.stats) {
-          collectionExternalApply += result.stats.externalApply;
-        }
-
-        if (result.links.length === 0) {
-          globalEmptyStreak++;
-          const statsInfo = result.stats
-            ? ` (${result.stats.totalCards} cards, ${result.stats.externalApply} external)`
-            : '';
-          addLog(
-            'info',
-            `Page ${pn} empty${statsInfo} (${globalEmptyStreak}/${LIMITS.emptyPageStreak} consecutive)`
-          );
-          continue;
-        }
-
-        // Got results — reset empty streak
-        globalEmptyStreak = 0;
-        let pageNew = 0;
-        let pageDupes = 0;
-        let pageKnown = 0;
-        const discoveredJobs: { url: string; jobKey: string; title?: string; company?: string; location?: string; salary?: string; source: string }[] = [];
-        for (const link of result.links) {
-          if (
-            settings.maxApplies > 0 &&
-            jobs.filter((j) => j.status === 'pending').length >= settings.maxApplies
-          ) {
-            break;
-          }
-          if (seenJobKeys.has(link.jobKey)) {
-            pageDupes++;
-            collectionDuplicates++;
-            continue;
-          }
-          seenJobKeys.add(link.jobKey);
-          if (await registry.isKnown(link.jobKey)) {
-            pageKnown++;
-            collectionAlreadyKnown++;
-            continue;
-          }
-          jobs.push({ url: link.url, jobKey: link.jobKey, title: link.title, status: 'pending' });
-          discoveredJobs.push({ url: link.url, jobKey: link.jobKey, title: link.title, company: link.company, location: link.location, salary: link.salary, source: 'indeed' });
-          pageNew++;
-        }
-        const totalNew = jobs.length - batchStartIndex;
-        const pageInfo = totalPages > 0 ? ` (page ${pn}/${totalPages})` : '';
-        const parts = [`+${pageNew} new`];
-        if (pageDupes > 0) parts.push(`${pageDupes} dupes`);
-        if (pageKnown > 0) parts.push(`${pageKnown} known`);
-        if (result.stats?.externalApply) parts.push(`${result.stats.externalApply} external`);
-        const totalInfo =
-          estimatedTotalJobs > 0 ? ` — ${totalNew}/${estimatedTotalJobs}` : ` — ${totalNew} total`;
-        addLog('info', `Page ${pn}${pageInfo}: ${parts.join(', ')}${totalInfo}`);
-
-        if (isConnected() && discoveredJobs.length > 0) {
-          sendJobDiscovered(discoveredJobs);
-        }
-      }
-
-      broadcastStatus();
-
-      // Early exit: enough pending jobs for maxApplies
-      const pendingNow = jobs.filter((j) => j.status === 'pending').length;
-      if (settings.maxApplies > 0 && pendingNow >= settings.maxApplies) {
-        addLog(
-          'info',
-          `Have ${pendingNow} pending job(s) (maxApplies=${settings.maxApplies}) — stopping collection early`
-        );
-        break;
-      }
-
-      nextPage += pageAssignments.length;
-      await randomDelay(1500, 3000);
-    }
-
-    const totalCollected = jobs.length - batchStartIndex;
-    const summaryParts = [`${totalCollected} Indeed Apply`];
-    if (collectionExternalApply > 0) summaryParts.push(`${collectionExternalApply} external`);
-    if (collectionAlreadyKnown > 0) summaryParts.push(`${collectionAlreadyKnown} already known`);
-    if (collectionDuplicates > 0) summaryParts.push(`${collectionDuplicates} duplicates`);
-    addLog(
-      'info',
-      `[Link ${searchIdx + 1}/${totalSearchUrls}] Collection complete: ${summaryParts.join(', ')} (${nextPage - 1} pages)`
-    );
-    console.log(`[collect] Search URL #${searchIdx + 1} finished: ${summaryParts.join(', ')}`);
-
-    // Keep all scraping tabs for reuse as worker tabs in the application phase
-    collectionTabId = scrapingTabIds[0];
-    // Store extra tabs for reuse (don't close them!)
-    collectionExtraTabIds = scrapingTabIds.slice(1);
-  }
-}
-
-// ── Application Phase (event-driven worker pool) ──
-
-async function collectAndApply(): Promise<void> {
-  // Phase 1: Collect all jobs
-  console.log('[bot] === PHASE 1: COLLECTION START ===');
-  await collectAllJobs();
-  console.log(`[bot] === PHASE 1: COLLECTION END — ${jobs.length} total jobs ===`);
-
-  const pendingJobs = jobs.filter((j) => j.status === 'pending');
-  if (pendingJobs.length === 0) {
-    addLog('info', 'No jobs to apply');
-    return;
-  }
-
-  // Phase 2: Launch concurrent workers
-  console.log(`[bot] === PHASE 2: APPLYING START — ${pendingJobs.length} pending jobs ===`);
-  state = 'applying';
-  broadcastStatus();
-
-  addLog('info', `Starting application for ${pendingJobs.length} jobs (single tab)`);
-
-  // Reuse first collection tab for the single worker; close extras
-  const reuseTabId = collectionTabId;
-  collectionTabId = null;
-  for (const extraTab of collectionExtraTabIds) {
-    closeTab(extraTab).catch(() => {});
-  }
-  collectionExtraTabIds = [];
-
-  // Launch single worker
-  if (!stopRequested) {
-    await launchNextWorker(reuseTabId);
-  }
-
-  // Wait for all workers to finish (event-driven via onStepAdvanced / onTabSubmitted)
-  while (!stopRequested) {
-    const activeWorkers = tabWorkers.filter((w) => w.state !== 'done').length;
-    const hasPending = jobs.some((j) => j.status === 'pending');
-
-    if (activeWorkers === 0 && !hasPending) break;
-    if (activeWorkers === 0 && hasPending) {
-      // All workers finished but still pending jobs — launch more
-      await launchNextWorker();
-    }
-
-    await delay(1000);
-  }
-}
-
 function getNextPendingJob(): JobEntry | null {
   return jobs.find((j) => j.status === 'pending') || null;
 }
 
 async function launchNextWorker(reuseTabId: number | null = null): Promise<void> {
-  if (stopRequested || !settings) return;
+  if (stopRequested || !settings || state === 'paused') return;
 
   if (settings.maxApplies > 0 && appliedCount >= settings.maxApplies) {
     addLog('info', `Reached max applies limit (${settings.maxApplies})`);
@@ -709,7 +319,6 @@ async function launchNextWorker(reuseTabId: number | null = null): Promise<void>
   const job = getNextPendingJob();
   if (!job) return;
 
-  // Mark job so it's not picked by another worker
   job.status = 'in_progress';
 
   const worker: TabWorker = {
@@ -732,11 +341,10 @@ async function launchNextWorker(reuseTabId: number | null = null): Promise<void>
   }
 }
 
-/** Mark worker as done and reuse its tab for the next pending job */
 async function finishWorkerAndReuseTab(worker: TabWorker): Promise<void> {
   worker.state = 'done';
   broadcastStatus();
-  if (!stopRequested && jobs.some((j) => j.status === 'pending')) {
+  if (!stopRequested && state !== 'paused' && jobs.some((j) => j.status === 'pending')) {
     await delay(1000);
     await launchNextWorker(worker.tabId);
   }
@@ -746,17 +354,12 @@ async function prepareAndFillJob(worker: TabWorker): Promise<void> {
   if (!settings) return;
   const job = worker.job;
 
-  // Reuse existing tab or create a new one
   let tabId = worker.tabId;
   if (tabId > 0) {
-    // Reuse tab — navigate to job page
     await navigateTab(tabId, job.url);
-    addLog('info', `[Tab ${tabWorkers.indexOf(worker) + 1}] Reusing tab ${tabId}`);
-  } else if (getGroupId() !== null) {
-    tabId = await addTabToGroup(job.url);
-    worker.tabId = tabId;
+    addLog('info', `Reutilizando aba ${tabId}`);
   } else {
-    const result = await createTabGroup(job.url);
+    const result = await createTab(job.url);
     tabId = result.tabId;
     worker.tabId = tabId;
   }
@@ -764,7 +367,6 @@ async function prepareAndFillJob(worker: TabWorker): Promise<void> {
   await waitForTabLoad(tabId, TIMING.tabLoadTimeout);
   await delay(TIMING.pageLoadDelay);
 
-  // Check URL is still Indeed
   const tab = await chrome.tabs.get(tabId);
   if (!tab.url || !tab.url.includes(URL_PATTERNS.indeedDomain)) {
     job.status = 'skipped';
@@ -774,7 +376,6 @@ async function prepareAndFillJob(worker: TabWorker): Promise<void> {
     return;
   }
 
-  // Scrape job info
   const scrapeResponse = await sendToTab(tabId, { type: 'SCRAPE_JOB' });
   const jobInfo = scrapeResponse?.payload || {};
   job.title = jobInfo.title;
@@ -783,21 +384,19 @@ async function prepareAndFillJob(worker: TabWorker): Promise<void> {
   addLog('info', `[Tab ${tabWorkers.indexOf(worker) + 1}] ${job.title} at ${job.company}`);
   broadcastStatus();
 
-  // Generate tailored CV if enabled (with cache reuse)
   let cvPdfData: ArrayBuffer | undefined;
   let cvOnlyPdfData: ArrayBuffer | undefined;
   let cvFilename: string | undefined;
   let coverPdfData: ArrayBuffer | undefined;
   let coverFilename: string | undefined;
 
-  if (settings.personalization.enabled && settings.backendUrl && jobInfo.description) {
+  if (generateCvForBatch && settings.personalization.enabled && settings.backendUrl && jobInfo.description) {
     const safeTitle = (jobInfo.title || 'job')
       .trim()
       .replace(/\s+/g, '_')
       .replace(/[^a-zA-Z0-9_-]/g, '')
       .substring(0, 60);
 
-    // Check in-memory cache first
     const cached = pdfCache.get(safeTitle);
     if (cached) {
       addLog('info', `Reusing cached CVs for: ${jobInfo.title}`);
@@ -807,7 +406,6 @@ async function prepareAndFillJob(worker: TabWorker): Promise<void> {
       cvFilename = cached.cvFilename;
       coverFilename = cached.coverFilename;
     } else {
-      // Check if PDFs already exist on disk (output/ folder)
       cvFilename = `CV_${safeTitle}.pdf`;
       coverFilename = `Cover_${safeTitle}.pdf`;
       const cvCoverFilename = `CV_Cover_${safeTitle}.pdf`;
@@ -824,7 +422,6 @@ async function prepareAndFillJob(worker: TabWorker): Promise<void> {
         cvPdfData = existingCvCover;
         coverPdfData = existingCover;
 
-        // Store in memory cache too
         pdfCache.set(safeTitle, {
           cvPdfData,
           cvOnlyPdfData,
@@ -857,7 +454,6 @@ async function prepareAndFillJob(worker: TabWorker): Promise<void> {
 
           addLog('info', `CVs generated for: ${jobInfo.title}`);
 
-          // Store in cache for reuse
           pdfCache.set(safeTitle, {
             cvPdfData,
             cvOnlyPdfData,
@@ -872,7 +468,7 @@ async function prepareAndFillJob(worker: TabWorker): Promise<void> {
     }
   }
 
-  const cvRequired = settings.personalization.enabled;
+  const cvRequired = generateCvForBatch && settings.personalization.enabled;
   if (cvRequired && !cvPdfData) {
     addLog('error', 'Dynamic CV required but generation failed. Skipping job.');
     job.status = 'skipped';
@@ -882,7 +478,6 @@ async function prepareAndFillJob(worker: TabWorker): Promise<void> {
     return;
   }
 
-  // Click Apply button
   const applyResponse = await sendToTab(tabId, { type: 'CLICK_APPLY' });
   const applyResult = applyResponse?.payload;
 
@@ -904,7 +499,6 @@ async function prepareAndFillJob(worker: TabWorker): Promise<void> {
     return;
   }
 
-  // Wait for wizard to load
   addLog('info', `[Tab ${tabWorkers.indexOf(worker) + 1}] Waiting for wizard...`);
   let wizardReady = false;
   for (let attempt = 0; attempt < 15; attempt++) {
@@ -915,9 +509,7 @@ async function prepareAndFillJob(worker: TabWorker): Promise<void> {
         wizardReady = true;
         break;
       }
-    } catch {
-      /* not injected yet */
-    }
+    } catch {}
   }
 
   if (!wizardReady) {
@@ -928,7 +520,6 @@ async function prepareAndFillJob(worker: TabWorker): Promise<void> {
     return;
   }
 
-  // Cache CV payload for re-sending on step advances
   worker.cvPayload = {
     cvData: cvPdfData ? Array.from(new Uint8Array(cvPdfData)) : undefined,
     cvOnlyData: cvOnlyPdfData ? Array.from(new Uint8Array(cvOnlyPdfData)) : undefined,
@@ -939,7 +530,6 @@ async function prepareAndFillJob(worker: TabWorker): Promise<void> {
     baseProfile: settings?.personalization?.baseProfile || ''
   };
 
-  // Send first fill command
   worker.state = 'filling';
   await sendFillCommand(worker);
 }
@@ -976,11 +566,9 @@ async function sendFillCommand(worker: TabWorker, depth = 0): Promise<void> {
       `[Tab ${tabWorkers.indexOf(worker) + 1}] Needs user input: ${stepResponse?.payload?.fieldLabel}`
     );
   } else if (action === 'continued') {
-    // Special pages auto-handled (privacy/consent) — fill next step
     await delay(1500);
     await sendFillCommand(worker, depth + 1);
   } else {
-    // No response or unknown — wait and retry once
     await delay(3000);
     const retry = await sendToTab(worker.tabId, {
       type: 'FILL_AND_ADVANCE',
@@ -1000,8 +588,6 @@ async function sendFillCommand(worker: TabWorker, depth = 0): Promise<void> {
   broadcastStatus();
 }
 
-// ── Event Handlers (called from background/index.ts) ──
-
 export async function onStepAdvanced(senderTabId: number): Promise<void> {
   const worker = tabWorkers.find((w) => w.tabId === senderTabId);
   if (!worker || worker.state === 'done') return;
@@ -1011,7 +597,7 @@ export async function onStepAdvanced(senderTabId: number): Promise<void> {
   worker.state = 'filling';
   broadcastStatus();
 
-  await delay(1500); // Wait for new step DOM to settle
+  await delay(1500);
   await sendFillCommand(worker);
 }
 

@@ -1,5 +1,5 @@
 // ── Bot State ──
-export type BotState = 'idle' | 'collecting' | 'applying' | 'paused' | 'waiting_user';
+export type BotState = 'idle' | 'applying' | 'paused' | 'waiting_user';
 
 export interface JobEntry {
   url: string;

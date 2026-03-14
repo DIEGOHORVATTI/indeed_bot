@@ -23,20 +23,6 @@ type ExtensionMessage =
       };
     }
   | {
-      type: 'ext:job:discovered';
-      payload: {
-        jobs: Array<{
-          url: string;
-          jobKey: string;
-          title?: string;
-          company?: string;
-          location?: string;
-          salary?: string;
-          source: string;
-        }>;
-      };
-    }
-  | {
       type: 'ext:job:applied';
       payload: {
         jobKey: string;
@@ -80,6 +66,19 @@ export type BackendMessage =
         company: string;
         cvPdfUrl?: string;
         coverPdfUrl?: string;
+      };
+    }
+  | {
+      type: 'cmd:apply-jobs';
+      payload: {
+        jobs: Array<{
+          id: number;
+          url: string;
+          title: string;
+          company: string;
+        }>;
+        mode: 'semi-auto' | 'full-auto';
+        generateCv: boolean;
       };
     };
 
@@ -215,15 +214,6 @@ export function sendScreenshot(data: { screenshot: string; url: string; pageCont
       pageContext: data.pageContext,
       timestamp: Date.now()
     }
-  });
-}
-
-export function sendJobDiscovered(
-  jobs: Array<{ url: string; jobKey: string; title?: string; company?: string; location?: string; salary?: string; source: string }>
-): void {
-  sendMessage({
-    type: 'ext:job:discovered',
-    payload: { jobs }
   });
 }
 

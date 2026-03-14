@@ -5,7 +5,6 @@
   "description": "Auto-apply to jobs across all platforms with AI-tailored CV and smart form filling",
   "permissions": [
     "tabs",
-    "tabGroups",
     "storage",
     "notifications",
     "alarms",
@@ -78,7 +77,6 @@
       "128": "assets/icons/icon128.png"
     }
   },
-  "options_page": "options/options.html",
   "icons": {
     "16": "assets/icons/icon16.png",
     "48": "assets/icons/icon48.png",
