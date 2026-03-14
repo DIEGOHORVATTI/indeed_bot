@@ -1,16 +1,24 @@
+import { useCallback } from 'react'
+import { useSWRConfig } from 'swr'
+import { Box, Typography, Stack } from '@mui/material'
+import { API_URL } from '@/lib/api'
 import { StatsCards } from '@/components/stats-cards'
-import { PipelineControls } from '@/components/pipeline-controls'
-import { QueueMonitor } from '@/components/queue-monitor'
+import { ScrapeControls } from '@/components/scrape-controls'
+
+const STATS_KEY = `${API_URL}/api/jobs/stats`
 
 export default function OverviewPage() {
+  const { mutate } = useSWRConfig()
+
+  const handleScrapeComplete = useCallback(() => {
+    mutate(STATS_KEY)
+  }, [mutate])
+
   return (
-    <div className="space-y-6">
-      <h2 className="text-2xl font-bold">Visão Geral</h2>
-      <StatsCards />
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <PipelineControls />
-        <QueueMonitor />
-      </div>
-    </div>
+    <Stack spacing={3}>
+      <Typography variant="h4">Visão Geral</Typography>
+      <StatsCards swrKey={STATS_KEY} />
+      <ScrapeControls onComplete={handleScrapeComplete} />
+    </Stack>
   )
 }
