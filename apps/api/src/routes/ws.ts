@@ -1,6 +1,4 @@
 import { Elysia } from 'elysia'
-import { Redis as IORedis } from 'ioredis'
-import { REDIS_URL } from '@jobpilot/config'
 import { getDb, insertJob, updateJob, getJobByUrl } from '@jobpilot/db'
 
 type ExtensionMessage =
@@ -36,6 +34,8 @@ type ExtensionMessage =
           location?: string
           salary?: string
           source: string
+          applyType?: string
+          searchQuery?: string
         }>
       }
     }
@@ -85,17 +85,45 @@ type BackendMessage =
         coverPdfUrl?: string
       }
     }
-
-type SandboxControl = { action?: string }
+  | {
+      type: 'cmd:scrape'
+      payload: {
+        searchUrls: string[]
+        maxJobs: number
+      }
+    }
+  | {
+      type: 'cmd:apply-jobs'
+      payload: {
+        jobs: Array<{
+          id: number
+          url: string
+          title: string
+          company: string
+        }>
+        mode: 'semi-auto' | 'full-auto'
+        generateCv: boolean
+      }
+    }
 
 const db = getDb()
-const redisPub = new IORedis(REDIS_URL)
-const redisSub = new IORedis(REDIS_URL)
 const jobKeyToUrl = new Map<string, string>()
 
 let extensionSocket: { send(data: string): void; close(code?: number, reason?: string): void } | null =
   null
-let subReadyPromise: Promise<void> | null = null
+let extensionConnected = false
+
+type ScreenshotListener = (data: string) => void
+const screenshotListeners = new Set<ScreenshotListener>()
+
+export function onScreenshot(listener: ScreenshotListener): () => void {
+  screenshotListeners.add(listener)
+  return () => screenshotListeners.delete(listener)
+}
+
+export function isExtensionConnected(): boolean {
+  return extensionConnected
+}
 
 function tryParseJSON<T>(value: string): T | null {
   try {
@@ -118,13 +146,6 @@ function normalizeIncoming(data: unknown): string | null {
   return null
 }
 
-function mapSandboxActionToCommand(action?: string): BackendMessage | null {
-  if (action === 'pause') return { type: 'cmd:pause' }
-  if (action === 'resume') return { type: 'cmd:resume' }
-  if (action === 'skip') return { type: 'cmd:stop' }
-  return null
-}
-
 function forwardToExtension(message: BackendMessage): void {
   if (!extensionSocket) return
   try {
@@ -132,34 +153,13 @@ function forwardToExtension(message: BackendMessage): void {
   } catch {}
 }
 
-async function ensureRedisSubscriptions(): Promise<void> {
-  if (subReadyPromise) return subReadyPromise
-
-  subReadyPromise = (async () => {
-    redisSub.on('message', (channel: string, message: string) => {
-      if (channel === 'sandbox:control') {
-        const control = tryParseJSON<SandboxControl>(message)
-        const mapped = mapSandboxActionToCommand(control?.action)
-        if (mapped) forwardToExtension(mapped)
-        return
-      }
-
-      if (channel === 'extension:command') {
-        const parsed = tryParseJSON<BackendMessage>(message)
-        if (parsed) forwardToExtension(parsed)
-      }
-    })
-
-    await redisSub.subscribe('sandbox:control', 'extension:command')
-  })()
-
-  return subReadyPromise
-}
-
 async function handleExtensionMessage(message: ExtensionMessage): Promise<void> {
   switch (message.type) {
     case 'ext:screenshot': {
-      await redisPub.publish('sandbox:state', JSON.stringify(message.payload))
+      const payload = JSON.stringify(message.payload)
+      for (const listener of screenshotListeners) {
+        listener(payload)
+      }
       return
     }
 
@@ -176,6 +176,9 @@ async function handleExtensionMessage(message: ExtensionMessage): Promise<void> 
             company: job.company ?? '',
             location: job.location || null,
             salary: job.salary || null,
+            jobKey: job.jobKey || null,
+            applyType: job.applyType || null,
+            searchQuery: job.searchQuery || null,
           })
         }
       }
@@ -219,14 +222,18 @@ async function handleExtensionMessage(message: ExtensionMessage): Promise<void> 
   }
 }
 
-export async function sendToExtension(message: BackendMessage): Promise<void> {
-  await redisPub.publish('extension:command', JSON.stringify(message))
+export function sendToExtension(message: BackendMessage): void {
+  forwardToExtension(message)
+}
+
+export function handleSandboxControl(action: string): void {
+  if (action === 'pause') forwardToExtension({ type: 'cmd:pause' })
+  else if (action === 'resume') forwardToExtension({ type: 'cmd:resume' })
+  else if (action === 'skip') forwardToExtension({ type: 'cmd:stop' })
 }
 
 export const wsRoute = new Elysia().ws('/ws/extension', {
-  async open(ws) {
-    await ensureRedisSubscriptions()
-
+  open(ws) {
     if (extensionSocket && extensionSocket !== ws) {
       try {
         extensionSocket.close(1000, 'Replaced by newer extension connection')
@@ -234,23 +241,23 @@ export const wsRoute = new Elysia().ws('/ws/extension', {
     }
 
     extensionSocket = ws
-    await redisPub.set('extension:connected', 'true')
+    extensionConnected = true
   },
 
-  async message(_ws, data) {
+  message(_ws, data) {
     const raw = normalizeIncoming(data)
     if (!raw) return
 
     const parsed = tryParseJSON<ExtensionMessage>(raw)
     if (!parsed) return
 
-    await handleExtensionMessage(parsed)
+    handleExtensionMessage(parsed)
   },
 
-  async close(ws) {
+  close(ws) {
     if (extensionSocket === ws) {
       extensionSocket = null
-      await redisPub.set('extension:connected', 'false')
+      extensionConnected = false
     }
   }
 })

@@ -1,18 +1,14 @@
 import { Elysia, sse } from 'elysia'
-import { Redis as IORedis } from 'ioredis'
-import { REDIS_URL } from '@jobpilot/config'
 import type { SandboxControlAction } from '@jobpilot/types'
+import { onScreenshot, handleSandboxControl } from './ws.js'
 
 export const sandboxRoute = new Elysia()
   .get('/api/sandbox/stream', async function* ({ request }) {
-    const sub = new IORedis(REDIS_URL)
-    await sub.subscribe('sandbox:state')
-
     const messages: string[] = []
     let notifyReady: (() => void) | null = null
 
-    sub.on('message', (_channel: string, message: string) => {
-      messages.push(message)
+    const unsubscribe = onScreenshot((data) => {
+      messages.push(data)
       if (notifyReady) {
         notifyReady()
         notifyReady = null
@@ -37,15 +33,12 @@ export const sandboxRoute = new Elysia()
         }
       }
     } finally {
-      sub.unsubscribe()
-      sub.quit()
+      unsubscribe()
     }
   })
 
-  .post('/api/sandbox/control', async ({ body }) => {
+  .post('/api/sandbox/control', ({ body }) => {
     const { action } = body as { action: SandboxControlAction }
-    const pub = new IORedis(REDIS_URL)
-    await pub.publish('sandbox:control', JSON.stringify({ action }))
-    pub.quit()
+    handleSandboxControl(action)
     return { status: 'ok', action }
   })

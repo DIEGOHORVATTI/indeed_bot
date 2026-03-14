@@ -12,8 +12,6 @@ export const TEMPLATES_DIR = resolve(REPO_ROOT, 'templates')
 export const MODEL_FAST = process.env.ANTHROPIC_MODEL_FAST || 'claude-haiku-4-5-20251001'
 export const MODEL_SMART = process.env.ANTHROPIC_MODEL_SMART || 'claude-opus-4-20250514'
 
-export const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379'
-
 /** Proxy para o Playwright (ex: socks5://user:pass@host:port ou http://host:port) */
 export const PROXY_URL = process.env.PROXY_URL || ''
 

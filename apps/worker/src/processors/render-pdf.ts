@@ -24,8 +24,8 @@ export async function processRenderPdf(job: Job<{ jobId: number }>): Promise<{ j
   console.log(`[render-pdf] Gerando PDFs para: ${dbJob.title} em ${dbJob.company}`)
 
   try {
-    const cvTemplatePath = join(TEMPLATES_DIR, 'cv_template.html')
-    const coverTemplatePath = join(TEMPLATES_DIR, 'cover_template.html')
+    const cvTemplatePath = join(TEMPLATES_DIR, 'cv-classic.html')
+    const coverTemplatePath = join(TEMPLATES_DIR, 'cover-classic.html')
 
     // Generate CV PDF — contact info now comes from TailoredContent
     const cvHtml = fillCvTemplate(data, cvTemplatePath)
