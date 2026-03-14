@@ -12,8 +12,8 @@ let coverTemplate = '';
 
 export async function loadTemplates(): Promise<void> {
   try {
-    const cvUrl = chrome.runtime.getURL('assets/cv_template.html');
-    const coverUrl = chrome.runtime.getURL('assets/cover_template.html');
+    const cvUrl = chrome.runtime.getURL('assets/cv-classic.html');
+    const coverUrl = chrome.runtime.getURL('assets/cover-classic.html');
 
     const [cvResp, coverResp] = await Promise.all([fetch(cvUrl), fetch(coverUrl)]);
 

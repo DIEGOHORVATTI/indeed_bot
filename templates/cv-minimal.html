@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="utf-8">
+  <style>
+    @page {
+      size: A4;
+      margin: 0;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Arial, Helvetica, sans-serif;
+      font-size: 9.5pt;
+      color: #2d2d2d;
+      line-height: 1.5;
+      background: #fff;
+      padding: 36px 40px 28px 40px;
+    }
+
+    .header {
+      margin-bottom: 16px;
+    }
+
+    .header h1 {
+      font-size: 24pt;
+      font-weight: 300;
+      color: #16213e;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+      margin-bottom: 2px;
+    }
+
+    .header .objective {
+      font-size: 10pt;
+      color: #e94560;
+      font-weight: 500;
+      letter-spacing: 1px;
+      margin-bottom: 8px;
+    }
+
+    .header .contact {
+      font-size: 8pt;
+      color: #888;
+    }
+
+    .header .contact a {
+      color: #16213e;
+      text-decoration: none;
+      font-weight: 600;
+    }
+
+    .header .contact .sep {
+      margin: 0 6px;
+      color: #ccc;
+    }
+
+    .divider {
+      border: none;
+      border-top: 1px solid #16213e;
+      margin: 0 0 14px 0;
+    }
+
+    h2 {
+      font-size: 8.5pt;
+      font-weight: 600;
+      color: #16213e;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin: 14px 0 6px 0;
+    }
+
+    h2:first-of-type {
+      margin-top: 0;
+    }
+
+    .summary {
+      font-size: 9pt;
+      color: #555;
+      margin-bottom: 4px;
+      line-height: 1.6;
+    }
+
+    .keywords {
+      margin: 4px 0 6px 0;
+    }
+
+    .keywords .badge {
+      display: inline-block;
+      border: 1px solid #16213e;
+      border-radius: 2px;
+      padding: 1px 7px;
+      font-size: 7pt;
+      color: #16213e;
+      margin: 1.5px 2px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+    }
+
+    .skills-grid {
+      font-size: 8.5pt;
+      color: #444;
+    }
+
+    .skills-grid .row {
+      margin-bottom: 1.5px;
+      padding: 1px 0;
+    }
+
+    .skills-grid .label {
+      font-weight: 700;
+      color: #16213e;
+    }
+
+    .job {
+      margin-bottom: 8px;
+    }
+
+    .job-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+
+    .job-title {
+      font-weight: 600;
+      font-size: 9.5pt;
+      color: #2d2d2d;
+    }
+
+    .job-date {
+      font-size: 7.5pt;
+      color: #999;
+      white-space: nowrap;
+      letter-spacing: 0.5px;
+    }
+
+    .job-company {
+      font-size: 8pt;
+      color: #777;
+      margin-bottom: 2px;
+    }
+
+    .job ul {
+      margin-left: 14px;
+      font-size: 8.5pt;
+      color: #444;
+    }
+
+    .job ul li {
+      margin-bottom: 1px;
+      line-height: 1.45;
+    }
+
+    .edu {
+      font-size: 8.5pt;
+      color: #444;
+      margin-bottom: 2px;
+    }
+
+    .edu strong {
+      font-weight: 600;
+      color: #2d2d2d;
+    }
+
+    .certs {
+      font-size: 8.5pt;
+      color: #444;
+    }
+
+    .certs ul {
+      margin-left: 14px;
+    }
+
+    .certs li {
+      margin-bottom: 1px;
+    }
+
+    .languages-section {
+      font-size: 8.5pt;
+      color: #444;
+    }
+
+    .languages-section strong {
+      font-weight: 600;
+      color: #2d2d2d;
+    }
+
+    .additional {
+      font-size: 8pt;
+      color: #777;
+      margin-top: 6px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="header">
+    <h1>{{profile_name}}</h1>
+    <div class="objective">{{objective}}</div>
+    <div class="contact">
+      {{profile_contact}}
+    </div>
+  </div>
+  <hr class="divider">
+
+  <h2>{{section_summary}}</h2>
+  <p class="summary">{{summary}}</p>
+  <div class="keywords">{{keywords}}</div>
+
+  <h2>{{section_skills}}</h2>
+  <div class="skills-grid">
+    {{skills}}
+  </div>
+
+  <h2>{{section_experience}}</h2>
+  {{experience}}
+
+  <h2>{{section_education}}</h2>
+  <div class="edu">
+    {{education}}
+  </div>
+
+  <h2>{{section_certifications}}</h2>
+  <div class="certs">
+    {{certifications}}
+  </div>
+
+  <h2>{{section_languages}}</h2>
+  <div class="languages-section">
+    {{languages}}
+  </div>
+
+  {{additional_info}}
+
+</body>
+
+</html>

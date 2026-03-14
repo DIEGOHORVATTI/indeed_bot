@@ -17,7 +17,7 @@ export function fillCvTemplate(
   data: TailoredContent,
   templatePath?: string
 ): string {
-  const tplPath = templatePath || resolve(process.cwd(), 'templates', 'cv_template.html')
+  const tplPath = templatePath || resolve(process.cwd(), 'templates', 'cv-classic.html')
   let html = readFileSync(tplPath, 'utf-8')
 
   html = html.replace(/\{\{profile_name\}\}/g, data.profile_name || '')
@@ -97,7 +97,7 @@ export function fillCoverTemplate(
   data: TailoredContent,
   templatePath?: string
 ): string {
-  const tplPath = templatePath || resolve(process.cwd(), 'templates', 'cover_template.html')
+  const tplPath = templatePath || resolve(process.cwd(), 'templates', 'cover-classic.html')
   let html = readFileSync(tplPath, 'utf-8')
 
   html = html.replace(/\{\{profile_name\}\}/g, data.profile_name || '')
