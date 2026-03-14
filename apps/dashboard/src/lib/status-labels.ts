@@ -4,6 +4,7 @@ export const STATUS_LABELS: Record<string, string> = {
   scored: 'Avaliada',
   tailored: 'Personalizada',
   ready: 'Pronta',
+  applying: 'Aplicando',
   applied: 'Candidatada',
   failed: 'Falhou',
   skipped: 'Ignorada',
